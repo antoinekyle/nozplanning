@@ -262,13 +262,15 @@ function buildCalendarPage() {
       <div style="font-size:12px;color:var(--text-muted)">Planning semaine ${SEMAINE.numero}</div>
     </div>
 
-    <div class="cal-grid">
-      <div class="cal-weekdays">
-        ${['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(j =>
-          `<div class="cal-weekday">${j}</div>`
-        ).join('')}
+    <div class="cal-wrapper">
+      <div class="cal-grid">
+        <div class="cal-weekdays">
+          ${['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(j =>
+            `<div class="cal-weekday">${j}</div>`
+          ).join('')}
+        </div>
+        <div class="cal-days" id="cal-days"></div>
       </div>
-      <div class="cal-days" id="cal-days"></div>
     </div>
 
     <div style="margin-top:14px">
@@ -352,13 +354,15 @@ function initCalendar() {
       const isToday = cell.date.getTime() === today.getTime();
       const events = eventsMap[iso] || [];
 
-      const evHTML = events.slice(0, 4).map(ev =>
+      const evHTML = events.slice(0, 3).map(ev =>
         `<div class="cal-event" style="background:${ev.color}" title="${ev.prenom} — ${ev.task} ${ev.deb}h–${ev.fin}h">
-          ${ev.prenom} ${ev.deb}h
+          ${ev.prenom}
         </div>`
       ).join('');
 
-      const more = events.length > 4 ? `<div style="font-size:9px;color:var(--text-muted);padding:1px 4px">+${events.length - 4} autres</div>` : '';
+      const more = events.length > 3
+        ? `<div style="font-size:8px;color:var(--text-muted);padding:1px 3px">+${events.length - 3}</div>`
+        : '';
 
       return `<div class="cal-day ${cell.other ? 'other-month' : ''} ${isToday ? 'today' : ''}">
         <div class="cal-day-num">${cell.date.getDate()}</div>
