@@ -475,3 +475,60 @@ table.ptable tbody tr:last-child td { border-bottom: none; }
   .card, .day-card { box-shadow: none; }
   body { background: #fff; }
 }
+
+/* ——— CONSIGNES ——————————————————————————— */
+.consigne-banner {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--noz-red);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  animation: slideIn 0.2s ease;
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.consigne-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+.consigne-body { flex: 1; min-width: 0; }
+.consigne-from {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--noz-red); margin-bottom: 2px;
+}
+.consigne-text { font-size: 13px; color: var(--text); line-height: 1.45; word-break: break-word; }
+.consigne-date { font-size: 10px; color: var(--text-light); margin-top: 3px; }
+.consigne-del {
+  background: none; border: none; color: var(--text-light);
+  cursor: pointer; font-size: 18px; padding: 0 2px; line-height: 1;
+  flex-shrink: 0; transition: color 0.15s;
+}
+.consigne-del:hover { color: var(--noz-red); }
+.consigne-empty { text-align: center; padding: 18px; color: var(--text-light); font-size: 13px; font-style: italic; }
+.priority-haute   { background: #fef2f2; color: #dc2626; border-left-color: #dc2626 !important; }
+.priority-normale { background: #fff7ed; color: #ea580c; }
+.priority-info    { background: #eff6ff; color: #2563eb; border-left-color: #2563eb !important; }
+.priority-badge {
+  display: inline-block; font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.4px;
+  padding: 1px 6px; border-radius: 10px; margin-left: 5px;
+}
+
+/* ——— NOTIF BADGE NAV ——————————————————— */
+.notif-dot {
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  background: var(--noz-red);
+  color: #fff;
+  font-size: 9px; font-weight: 700;
+  min-width: 16px; height: 16px;
+  border-radius: 10px;
+  padding: 0 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+  line-height: 1;
+}

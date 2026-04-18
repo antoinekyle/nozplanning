@@ -8,8 +8,9 @@ function buildNav() {
   const nav = document.getElementById('nav');
 
   const tabs = [
-    { id: 'global',   label: 'Planning global', icon: '📅' },
-    { id: 'calendar', label: 'Calendrier',       icon: '🗓' },
+    { id: 'global',     label: 'Planning global', icon: '📅' },
+    { id: 'calendar',   label: 'Calendrier',      icon: '🗓' },
+    { id: 'consignes',  label: 'Consignes',        icon: '📌' },
     ...STAFF.map((s, i) => ({ id: 'p' + i, label: s.prenom, staff: s })),
   ];
 
@@ -29,6 +30,19 @@ function buildNav() {
     }
 
     btn.addEventListener('click', () => showPage(tab.id));
+
+    // Badge notification consignes sur onglet employé
+    if (tab.staff) {
+      const count = getConsignesFor(tab.staff.prenom).length;
+      if (count > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'notif-dot';
+        badge.id = 'notif-' + tab.id;
+        badge.textContent = count;
+        btn.appendChild(badge);
+      }
+    }
+
     nav.appendChild(btn);
   });
 }
@@ -236,6 +250,14 @@ function buildPersonPage(s, i) {
         ${total}h / ${s.contrat}h · Écart : ${total >= s.contrat ? '+' : ''}${total - s.contrat}h
       </span>
     </div>
+
+    <div style="margin-top:16px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:8px;display:flex;align-items:center;gap:8px">
+        Consignes du gérant
+        <span id="consigne-count-${i}" style="background:var(--noz-red);color:#fff;font-size:9px;padding:1px 6px;border-radius:10px;font-weight:700"></span>
+      </div>
+      <div id="consignes-${i}"></div>
+    </div>
   `;
 
   pages.appendChild(div);
@@ -404,19 +426,225 @@ function showToast(msg) {
   setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
+/* ——— CONSIGNES ENGINE ————————————————————— */
+
+const CONSIGNES_KEY = 'noz_consignes';
+
+function getAllConsignes() {
+  try { return JSON.parse(localStorage.getItem(CONSIGNES_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function saveAllConsignes(list) {
+  localStorage.setItem(CONSIGNES_KEY, JSON.stringify(list));
+}
+
+function getConsignesFor(prenom) {
+  const all = getAllConsignes();
+  return all.filter(c => c.dest === prenom || c.dest === 'Tous');
+}
+
+function addConsigne(dest, text, priority) {
+  const all = getAllConsignes();
+  const c = {
+    id:       Date.now(),
+    dest,
+    text,
+    priority,
+    from:     'Antoine (Gérant)',
+    date:     new Date().toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }),
+  };
+  all.unshift(c);
+  saveAllConsignes(all);
+  refreshAllConsignes();
+  updateNavBadges();
+}
+
+function deleteConsigne(id) {
+  const all = getAllConsignes().filter(c => c.id !== id);
+  saveAllConsignes(all);
+  refreshAllConsignes();
+  updateNavBadges();
+}
+
+function renderConsignesFor(prenom, containerEl, countEl) {
+  const list = getConsignesFor(prenom);
+  if (countEl) countEl.textContent = list.length > 0 ? list.length : '';
+
+  if (!list.length) {
+    containerEl.innerHTML = '<div class="consigne-empty">Aucune consigne en cours</div>';
+    return;
+  }
+
+  containerEl.innerHTML = list.map(c => {
+    const icons = { haute: '🔴', normale: '🟡', info: '🔵' };
+    const icon  = icons[c.priority] || '🟡';
+    return `
+      <div class="consigne-banner priority-${c.priority}" data-id="${c.id}">
+        <span class="consigne-icon">${icon}</span>
+        <div class="consigne-body">
+          <div class="consigne-from">
+            ${c.from}
+            <span class="priority-badge priority-${c.priority}">${c.priority}</span>
+            ${c.dest === 'Tous' ? '<span class="priority-badge" style="background:var(--bg-muted);color:var(--text-muted)">Tous</span>' : ''}
+          </div>
+          <div class="consigne-text">${escHtml(c.text)}</div>
+          <div class="consigne-date">${c.date}</div>
+        </div>
+        <button class="consigne-del" onclick="deleteConsigne(${c.id})" title="Supprimer">×</button>
+      </div>`;
+  }).join('');
+}
+
+function refreshAllConsignes() {
+  STAFF.forEach((s, i) => {
+    const container = document.getElementById('consignes-' + i);
+    const countEl   = document.getElementById('consigne-count-' + i);
+    if (container) renderConsignesFor(s.prenom, container, countEl);
+  });
+  // Refresh consignes page if open
+  renderConsignesPage();
+}
+
+function updateNavBadges() {
+  STAFF.forEach((s, i) => {
+    const existing = document.getElementById('notif-p' + i);
+    const count = getConsignesFor(s.prenom).length;
+    if (existing) {
+      existing.textContent = count;
+      existing.style.display = count > 0 ? '' : 'none';
+    }
+  });
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ——— CONSIGNES PAGE ——————————————————————— */
+
+function buildConsignesPage() {
+  const pages = document.getElementById('pages');
+  const div = document.createElement('div');
+  div.className = 'page';
+  div.id = 'page-consignes';
+  div.innerHTML = `
+    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
+      <h2 style="font-size:16px;font-weight:600;color:var(--text)">Consignes équipe</h2>
+      <span style="font-size:11px;color:var(--text-muted)">Visible sur la fiche de chaque employé</span>
+    </div>
+
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:20px;box-shadow:var(--shadow-sm)">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:12px">
+        Nouvelle consigne
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center">
+        <label style="font-size:12px;color:var(--text-muted);font-weight:500">Pour :</label>
+        <select id="consigne-dest" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:13px;background:var(--bg-card);color:var(--text);cursor:pointer">
+          <option value="Tous">👥 Toute l'équipe</option>
+          ${STAFF.map(s => `<option value="${s.prenom}">${s.prenom} ${s.nom}</option>`).join('')}
+        </select>
+
+        <label style="font-size:12px;color:var(--text-muted);font-weight:500;margin-left:8px">Priorité :</label>
+        <select id="consigne-priority" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:13px;background:var(--bg-card);color:var(--text);cursor:pointer">
+          <option value="normale">🟡 Normale</option>
+          <option value="haute">🔴 Haute</option>
+          <option value="info">🔵 Info</option>
+        </select>
+      </div>
+
+      <textarea id="consigne-text"
+        placeholder="Ex: Penser à faire le TDM avant 9h, vérifier le facing après la livraison..."
+        style="width:100%;border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 14px;font-size:13px;background:var(--bg-muted);color:var(--text);resize:vertical;min-height:80px;font-family:inherit;outline:none;transition:border-color 0.15s"
+        onfocus="this.style.borderColor='var(--noz-navy)'"
+        onblur="this.style.borderColor='var(--border)'"
+      ></textarea>
+
+      <div style="display:flex;justify-content:flex-end;margin-top:10px;gap:8px">
+        <button onclick="document.getElementById('consigne-text').value=''" style="padding:8px 16px;border:1px solid var(--border);border-radius:var(--radius-sm);background:none;color:var(--text-muted);cursor:pointer;font-size:13px">
+          Effacer
+        </button>
+        <button onclick="submitConsigne()" style="padding:8px 20px;border:none;border-radius:var(--radius-sm);background:var(--noz-navy);color:#fff;cursor:pointer;font-size:13px;font-weight:600;transition:background 0.15s" onmouseover="this.style.background='#1a3a6e'" onmouseout="this.style.background='var(--noz-navy)'">
+          Envoyer la consigne
+        </button>
+      </div>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
+      <span>Consignes actives</span>
+      <button onclick="clearAllConsignes()" style="font-size:10px;color:var(--text-light);background:none;border:none;cursor:pointer;font-weight:400">Tout effacer</button>
+    </div>
+    <div id="consignes-page-list"></div>
+  `;
+  pages.appendChild(div);
+  renderConsignesPage();
+}
+
+function renderConsignesPage() {
+  const container = document.getElementById('consignes-page-list');
+  if (!container) return;
+  const all = getAllConsignes();
+  if (!all.length) {
+    container.innerHTML = '<div class="consigne-empty" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md)">Aucune consigne active</div>';
+    return;
+  }
+  const icons = { haute: '🔴', normale: '🟡', info: '🔵' };
+  container.innerHTML = all.map(c => `
+    <div class="consigne-banner priority-${c.priority}" data-id="${c.id}">
+      <span class="consigne-icon">${icons[c.priority] || '🟡'}</span>
+      <div class="consigne-body">
+        <div class="consigne-from" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span>Pour : <strong>${c.dest}</strong></span>
+          <span class="priority-badge priority-${c.priority}">${c.priority}</span>
+        </div>
+        <div class="consigne-text">${escHtml(c.text)}</div>
+        <div class="consigne-date">${c.from} · ${c.date}</div>
+      </div>
+      <button class="consigne-del" onclick="deleteConsigne(${c.id})" title="Supprimer">×</button>
+    </div>`).join('');
+}
+
+function submitConsigne() {
+  const text     = document.getElementById('consigne-text').value.trim();
+  const dest     = document.getElementById('consigne-dest').value;
+  const priority = document.getElementById('consigne-priority').value;
+  if (!text) {
+    document.getElementById('consigne-text').style.borderColor = '#dc2626';
+    setTimeout(() => document.getElementById('consigne-text').style.borderColor = 'var(--border)', 1500);
+    return;
+  }
+  addConsigne(dest, text, priority);
+  document.getElementById('consigne-text').value = '';
+  showToast('Consigne envoyée ✓');
+}
+
+function clearAllConsignes() {
+  if (!confirm('Effacer toutes les consignes ?')) return;
+  localStorage.removeItem(CONSIGNES_KEY);
+  refreshAllConsignes();
+  updateNavBadges();
+  showToast('Consignes effacées');
+}
+
 /* ——— INIT ———————————————————————————————— */
 function init() {
-  // Set week badge
   document.getElementById('week-badge').textContent = `Semaine ${SEMAINE.numero}`;
 
   buildNav();
   buildGlobalPage();
   buildCalendarPage();
+  buildConsignesPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
 
-  // Activate first tab
-  showPage('global');
+  // Render consignes on person pages
+  STAFF.forEach((s, i) => {
+    const container = document.getElementById('consignes-' + i);
+    const countEl   = document.getElementById('consigne-count-' + i);
+    if (container) renderConsignesFor(s.prenom, container, countEl);
+  });
 
+  showPage('global');
   setupPDF();
 }
 
