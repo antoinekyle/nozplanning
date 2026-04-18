@@ -476,6 +476,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="data.js"></script>
+<script src="firebase.js"></script>
 <script>
 // =============================================
 //  CONFIG
@@ -484,8 +485,40 @@ const CORRECT_PIN  = '1854';
 const MAX_ATTEMPTS = 5;
 const LOCK_DURATION = 60;
 
-// Clé localStorage pour le planning dynamique
-const PLANNING_KEY = 'noz_planning_overrides';
+// =============================================
+//  PLANNING OVERRIDE ENGINE (Firebase sync)
+// =============================================
+
+function getOverrides() {
+  try { return JSON.parse(localStorage.getItem('noz_planning_overrides') || '[]'); }
+  catch { return []; }
+}
+
+async function applyOverride(ov) {
+  await syncSaveOverride(ov);
+}
+
+async function removeOverride(prenom, jourIdx) {
+  await syncDeleteOverride(prenom, jourIdx);
+}
+
+function getEffectivePlanning() {
+  const overrides = getOverrides();
+  return STAFF.map(s => {
+    const shifts = s.shifts.map((sh, idx) => {
+      const ov = overrides.find(o => o.prenom === s.prenom && o.jourIdx === idx);
+      return ov ? { j: sh.j, deb: ov.deb, fin: ov.fin, task: ov.task } : sh;
+    });
+    return { ...s, shifts };
+  });
+}
+
+function resumeShifts(s) {
+  const labels = ['L','Ma','Me','J','V','Sa'];
+  return s.shifts.map((sh, i) =>
+    sh.deb ? `<b>${labels[i]}</b>:${sh.deb}h-${sh.fin}h` : `<b>${labels[i]}</b>:Repos`
+  ).join(' · ');
+}
 
 // =============================================
 //  PIN LOGIC
@@ -703,112 +736,167 @@ function resumeShifts(s) {
 }
 
 // =============================================
-//  MOTEUR D'INTENTIONS
+//  MOTEUR D'INTENTIONS — Langage naturel
 // =============================================
 
-const JOURS_FR = { lundi:0, mardi:1, mercredi:2, jeudi:3, vendredi:4, samedi:5 };
-const JOURS_LABEL = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+const JOURS_FR = { lundi:0, mardi:1, mercredi:2, jeudi:3, vendredi:4, samedi:5, dimanche:6 };
+const JOURS_LABEL = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 
-function detectNom(m) {
-  return STAFF.find(s => m.includes(s.prenom.toLowerCase()));
+// Normalise le texte : minuscules + sans accents
+function norm(s) {
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 }
+
+// Détecte un prénom dans le message (cherche aussi le nom)
+function detectNom(m) {
+  return STAFF.find(s =>
+    m.includes(norm(s.prenom)) ||
+    m.includes(norm(s.nom))
+  );
+}
+
+// Détecte un jour
 function detectJour(m) {
   for (const [j, idx] of Object.entries(JOURS_FR)) {
     if (m.includes(j)) return { label: JOURS_LABEL[idx], idx };
   }
+  // "aujourd'hui" → jour de la semaine actuel
+  if (m.includes('aujourd') || m.includes('auj')) {
+    const idx = (new Date().getDay() + 6) % 7; // 0=Lun
+    if (idx < 6) return { label: JOURS_LABEL[idx], idx };
+  }
   return null;
 }
-function detectHeure(m) {
-  const match = m.match(/(\d{1,2})[h:](\d{0,2})/);
-  return match ? parseInt(match[1]) : null;
-}
+
+// Détecte les heures dans le message
 function detectHeures(m) {
-  const matches = [...m.matchAll(/(\d{1,2})[h:](\d{0,2})/g)];
+  const matches = [...m.matchAll(/(\d{1,2})\s*h\s*(\d{0,2})/gi)];
   return matches.map(x => parseInt(x[1]));
 }
+
+// Détecte la tâche mentionnée
 function detectTask(m) {
-  if (m.includes('caisse'))     return 'Caisse';
-  if (m.includes('mep') || m.includes('mise en place')) return 'MEP';
-  if (m.includes('tdm'))        return 'TDM';
-  if (m.includes('polyvalent')) return 'Polyvalent';
-  if (m.includes('manager') || m.includes('gérant')) return 'Manager';
-  if (m.includes('cpro'))       return 'CPRO PM';
-  return 'Polyvalent';
+  if (m.includes('caisse'))                         return 'Caisse';
+  if (m.includes('mep') || m.includes('mise en place') || m.includes('mise en rayon')) return 'MEP';
+  if (m.includes('tdm') || m.includes('tri'))       return 'TDM';
+  if (m.includes('polyvalent') || m.includes('poly')) return 'Polyvalent';
+  if (m.includes('manager') || m.includes('gerant') || m.includes('responsable')) return 'Manager';
+  if (m.includes('cpro') || m.includes('contrat pro')) return 'CPRO PM';
+  if (m.includes('surgele'))                        return 'Surgelés';
+  if (m.includes('livraison'))                      return 'Livraison';
+  return null;
+}
+
+// Détecte l'intention principale du message
+function detectIntent(m) {
+  // ABSENCE / REPOS
+  const absenceMots = ['absent','absence','repos','conge','conges','maladie','arret','malade','pas la','ne vient pas','ne sera pas','indisponible','off'];
+  if (absenceMots.some(mot => m.includes(mot))) return 'absence';
+
+  // MODIFIER HORAIRES
+  const horaireMots = ['commence','commencer','debute','finit','termine','horaire','decale','change heure','travaille de','de h','jusqu'];
+  if (horaireMots.some(mot => m.includes(mot))) return 'horaire';
+
+  // CHANGER TÂCHE / POSTE
+  const tacheMots = ['met en','passe en','met a','affecte','place en','bouge','poste','tache','role','affectation','envoie','envoyer'];
+  if (tacheMots.some(mot => m.includes(mot))) return 'tache';
+
+  // ANNULER / RESTAURER
+  const annuleMots = ['annule','annuler','restaure','remet','retabli','initial','revenir','defaut','reset','efface'];
+  if (annuleMots.some(mot => m.includes(mot))) return 'annuler';
+
+  // VOIR PLANNING
+  const voirMots = ['planning','horaire','quand','quel jour','semaine','programme','quel est','montre','voir','affiche'];
+  if (voirMots.some(mot => m.includes(mot))) return 'voir';
+
+  // BILAN HEURES
+  const bilanMots = ['heure','heures','bilan','contrat','total','combien','reste'];
+  if (bilanMots.some(mot => m.includes(mot))) return 'bilan';
+
+  // PROBLÈME / SOUCIS
+  const problMots = ['soucis','probleme','souci','erreur','anomalie','bug','manque','oublie','pas de repos','sans repos','travaille tous'];
+  if (problMots.some(mot => m.includes(mot))) return 'probleme';
+
+  // QUESTION GÉNÉRALE
+  const questionMots = ['qui','quel','quand','combien','est-ce','comment','pourquoi'];
+  if (questionMots.some(mot => m.includes(mot))) return 'question';
+
+  return 'inconnu';
 }
 
 // =============================================
 //  ACTIONS RÉELLES
 // =============================================
 
-function actionAbsence(personne, jour) {
-  // Mettre en repos
-  applyOverride({ prenom: personne.prenom, jourIdx: jour.idx, deb: 0, fin: 0, task: null });
+async function actionAbsence(personne, jour) {
+  await applyOverride({ prenom: personne.prenom, jourIdx: jour.idx, deb: 0, fin: 0, task: null });
 
-  // Chercher un remplaçant pour la caisse si besoin
   const planning = getEffectivePlanning();
-  const personneEff = planning.find(s => s.prenom === personne.prenom);
   const shiftOriginal = personne.shifts[jour.idx];
   const avaitCaisse = shiftOriginal?.task?.toLowerCase().includes('caisse');
 
   let remplacantMsg = '';
   if (avaitCaisse) {
-    // Trouver quelqu'un de disponible ce jour sans caisse
     const dispo = planning.find(s =>
       s.prenom !== personne.prenom &&
       s.shifts[jour.idx]?.deb > 0 &&
       !s.shifts[jour.idx]?.task?.toLowerCase().includes('caisse')
     );
     if (dispo) {
-      applyOverride({ prenom: dispo.prenom, jourIdx: jour.idx, deb: dispo.shifts[jour.idx].deb, fin: dispo.shifts[jour.idx].fin, task: 'Caisse' });
-      remplacantMsg = `<br>🔄 <strong>${dispo.prenom}</strong> passe automatiquement en <strong>Caisse</strong> pour couvrir.`;
+      await applyOverride({ prenom: dispo.prenom, jourIdx: jour.idx, deb: dispo.shifts[jour.idx].deb, fin: dispo.shifts[jour.idx].fin, task: 'Caisse' });
+      remplacantMsg = `<br>🔄 <strong>${dispo.prenom}</strong> passe en <strong>Caisse</strong> pour couvrir.`;
     }
   }
 
-  // Si c'est un AM : Kylian prend le relais
   let relaisMsg = '';
   if (personne.role === 'AM') {
     const kylian = planning.find(s => s.prenom === 'Kylian');
     if (kylian && kylian.shifts[jour.idx]?.deb > 0) {
-      applyOverride({ prenom: 'Kylian', jourIdx: jour.idx, deb: kylian.shifts[jour.idx].deb, fin: kylian.shifts[jour.idx].fin, task: 'Relais AM' });
-      relaisMsg = `<br>👔 <strong>Kylian</strong> passe en <strong>Relais AM</strong> automatiquement.`;
+      await applyOverride({ prenom: 'Kylian', jourIdx: jour.idx, deb: kylian.shifts[jour.idx].deb, fin: kylian.shifts[jour.idx].fin, task: 'Relais AM' });
+      relaisMsg = `<br>👔 <strong>Kylian</strong> passe en <strong>Relais AM</strong>.`;
     }
   }
 
-  return `✅ <strong>${personne.prenom}</strong> est mis en repos le <strong>${jour.label}</strong>.${remplacantMsg}${relaisMsg}<br><br>
-Le planning est mis à jour en temps réel sur toutes les fiches. Aucune action supplémentaire requise.`;
+  return `✅ <strong>${personne.prenom}</strong> mis en repos le <strong>${jour.label}</strong>.${remplacantMsg}${relaisMsg}<br><br>Planning mis à jour sur toutes les fiches. ✓`;
 }
 
-function actionModifierHoraires(personne, jour, heures, task) {
+async function actionModifierHoraires(personne, jour, heures, task) {
+  const sh = personne.shifts[jour.idx];
+  const taskFinale = task || sh?.task || 'Polyvalent';
   if (heures.length >= 2) {
-    applyOverride({ prenom: personne.prenom, jourIdx: jour.idx, deb: heures[0], fin: heures[1], task });
-    return `✅ Horaires de <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> modifiés : <strong>${heures[0]}h → ${heures[1]}h</strong> (${task}).<br><br>Mis à jour sur toutes les fiches. ✓`;
+    await applyOverride({ prenom: personne.prenom, jourIdx: jour.idx, deb: heures[0], fin: heures[1], task: taskFinale });
+    return `✅ <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> : <strong>${heures[0]}h → ${heures[1]}h</strong> (${taskFinale}). Planning mis à jour. ✓`;
+  }
+  if (heures.length === 1 && sh?.deb) {
+    // Une seule heure → probablement l'heure de début
+    await applyOverride({ prenom: personne.prenom, jourIdx: jour.idx, deb: heures[0], fin: sh.fin, task: taskFinale });
+    return `✅ <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> commence maintenant à <strong>${heures[0]}h</strong> (fin inchangée : ${sh.fin}h). ✓`;
   }
   return null;
 }
 
-function actionChangerTache(personne, jour, task) {
+async function actionChangerTache(personne, jour, task) {
   const sh = personne.shifts[jour.idx];
-  if (!sh?.deb) return `❌ ${personne.prenom} est déjà en repos ce jour-là.`;
-  applyOverride({ prenom: personne.prenom, jourIdx: jour.idx, deb: sh.deb, fin: sh.fin, task });
-  return `✅ Tâche de <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> changée en <strong>${task}</strong>.<br>Horaires conservés : ${sh.deb}h–${sh.fin}h.`;
+  if (!sh?.deb) return `❌ <strong>${personne.prenom}</strong> est en repos ce jour-là. Voulez-vous le remettre en service ?`;
+  const taskFinale = task || 'Polyvalent';
+  await applyOverride({ prenom: personne.prenom, jourIdx: jour.idx, deb: sh.deb, fin: sh.fin, task: taskFinale });
+  return `✅ <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> passe en <strong>${taskFinale}</strong>. Horaires conservés : ${sh.deb}h–${sh.fin}h. ✓`;
 }
 
-function actionRestaurer(personne, jour) {
-  removeOverride(personne.prenom, jour.idx);
+async function actionRestaurer(personne, jour) {
+  await removeOverride(personne.prenom, jour.idx);
   const original = personne.shifts[jour.idx];
   const desc = original?.deb ? `${original.deb}h–${original.fin}h (${original.task})` : 'Repos';
-  return `↩️ Planning de <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> restauré au planning initial : <strong>${desc}</strong>.`;
+  return `↩️ Planning de <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> restauré : <strong>${desc}</strong>.`;
 }
 
 function actionVoirPlanning(personne) {
   const planning = getEffectivePlanning();
   const eff = planning.find(s => s.prenom === personne.prenom);
   const total = eff.shifts.reduce((sum, sh) => sum + (sh.deb ? sh.fin - sh.deb : 0), 0);
-  const overrides = getOverrides().filter(o => o.prenom === personne.prenom);
-  const modifTag = overrides.length ? ` <span style="background:#fef9c3;color:#92400e;font-size:10px;padding:1px 6px;border-radius:8px">${overrides.length} modif.</span>` : '';
-
-  return `Planning effectif de <strong>${personne.prenom}</strong>${modifTag} — ${total}h/${personne.contrat}h :<br><br>
-${resumeShifts(eff)}`;
+  const overridesCount = getOverrides().filter(o => o.prenom === personne.prenom).length;
+  const modifTag = overridesCount ? ` <span style="background:#fef9c3;color:#92400e;font-size:10px;padding:1px 6px;border-radius:8px">✏️ ${overridesCount} modif.</span>` : '';
+  return `Planning de <strong>${personne.prenom}</strong>${modifTag} — <strong>${total}h/${personne.contrat}h</strong> :<br><br>${resumeShifts(eff)}`;
 }
 
 function actionBilanEquipe() {
@@ -818,119 +906,202 @@ function actionBilanEquipe() {
     const total = s.shifts.reduce((sum, sh) => sum + (sh.deb ? sh.fin - sh.deb : 0), 0);
     const ok = Math.abs(total - s.contrat) <= 1;
     const modifs = overrides.filter(o => o.prenom === s.prenom).length;
-    const modifBadge = modifs ? ` <span style="font-size:10px;color:#92400e">✏️${modifs}</span>` : '';
-    return `<li>${ok?'✅':'⚠️'} <strong>${s.prenom}</strong>${modifBadge} — ${total}h/${s.contrat}h</li>`;
+    const badge = modifs ? ` <span style="font-size:10px;color:#92400e">✏️${modifs}</span>` : '';
+    return `<li>${ok?'✅':'⚠️'} <strong>${s.prenom}</strong>${badge} — ${total}h/${s.contrat}h</li>`;
   }).join('');
-  const totalModifs = overrides.length;
-  return `Bilan équipe (planning en cours) :<br><ul>${lines}</ul>${totalModifs ? `<em style="font-size:11px;color:var(--text-muted)">${totalModifs} modification(s) appliquée(s) par rapport au planning initial.</em>` : ''}`;
+  const total = overrides.length;
+  return `Bilan équipe :<br><ul>${lines}</ul>${total ? `<em style="font-size:11px;color:var(--text-muted)">${total} modification(s) en cours.</em>` : ''}`;
 }
 
-function actionResetTotal() {
-  localStorage.removeItem(PLANNING_KEY);
-  return `↩️ Toutes les modifications ont été annulées. Le planning initial est restauré sur toutes les fiches.`;
+async function actionResetTotal() {
+  await syncClearOverrides();
+  return `↩️ Toutes les modifications annulées. Planning initial restauré sur toutes les fiches.`;
+}
+
+// Détecte un problème de planning (ex: quelqu'un sans repos)
+function actionAnalyserProbleme(m) {
+  const planning = getEffectivePlanning();
+
+  // Cherche quelqu'un sans aucun repos
+  const sansRepos = planning.filter(s => s.shifts.every(sh => sh.deb > 0));
+  if (sansRepos.length > 0 || m.includes('repos') || m.includes('tous les jours')) {
+    const noms = sansRepos.map(s => s.prenom);
+    if (noms.length > 0) {
+      return `⚠️ J'ai détecté que <strong>${noms.join(', ')}</strong> n'${noms.length > 1 ? 'ont' : 'a'} aucun jour de repos cette semaine !<br><br>
+Dites-moi quel jour mettre en repos. Exemple : <em>"${noms[0]} est en repos lundi"</em>`;
+    }
+  }
+
+  // Vérifier couverture caisse
+  const joursSansCaisse = [];
+  for (let i = 0; i < 6; i++) {
+    const hasCaisse = planning.some(s => s.shifts[i]?.task?.toLowerCase().includes('caisse') && s.shifts[i]?.deb > 0);
+    if (!hasCaisse) joursSansCaisse.push(JOURS_LABEL[i]);
+  }
+  if (joursSansCaisse.length > 0) {
+    return `⚠️ Problème détecté : pas de caisse le <strong>${joursSansCaisse.join(', ')}</strong> !<br><br>Dites-moi qui mettre en caisse. Exemple : <em>"Cristiano en caisse ${joursSansCaisse[0].toLowerCase()}"</em>`;
+  }
+
+  return `J'ai analysé le planning. Voici ce que je vois :<br>${actionBilanEquipe()}<br><br>Tout semble correct. Si vous voyez un problème précis, décrivez-le moi.`;
 }
 
 // =============================================
-//  ROUTER D'INTENTIONS
+//  ROUTER D'INTENTIONS — VERSION INTELLIGENTE
 // =============================================
 
-function generateResponse(msg) {
-  const m = msg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-
+async function generateResponse(msg) {
+  const m = norm(msg);
+  const intent   = detectIntent(m);
   const personne = detectNom(m);
   const jour     = detectJour(m);
+  const heures   = detectHeures(m);
+  const task     = detectTask(m);
 
-  // — ABSENCE / REPOS —
-  if ((m.includes('absent') || m.includes('absence') || m.includes('repos') || m.includes('conge') || m.includes('maladie')) && personne && jour) {
-    return actionAbsence(personne, jour);
+  // — PROBLÈME / SOUCIS —
+  if (intent === 'probleme') {
+    return actionAnalyserProbleme(m);
+  }
+
+  // — ABSENCE / REPOS — (avec ou sans nom précis)
+  if (intent === 'absence') {
+    if (personne && jour) return await actionAbsence(personne, jour);
+    if (personne && !jour) return `Pour quelle journée <strong>${personne.prenom}</strong> est absent(e) ? (lundi, mardi, mercredi…)`;
+    if (!personne && jour) return `Qui est absent(e) le <strong>${jour.label}</strong> ?`;
+    return `Qui est absent(e) et quel jour ? Exemple : <em>"Kylian est absent lundi"</em>`;
   }
 
   // — MODIFIER HORAIRES —
-  if ((m.includes('change') || m.includes('modifie') || m.includes('decale') || m.includes('commence') || m.includes('finit') || m.includes('horaire')) && personne && jour) {
-    const heures = detectHeures(m);
-    const task   = detectTask(m) || personne.shifts[jour.idx]?.task || 'Polyvalent';
-    const result = actionModifierHoraires(personne, jour, heures, task);
-    if (result) return result;
+  if (intent === 'horaire') {
+    if (personne && jour) {
+      const result = await actionModifierHoraires(personne, jour, heures, task);
+      if (result) return result;
+      return `Quels sont les nouveaux horaires de <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> ? (ex: 9h à 17h)`;
+    }
+    if (personne && !jour) return `Quel jour voulez-vous modifier les horaires de <strong>${personne.prenom}</strong> ?`;
+    return `Précisez la personne et le jour. Exemple : <em>"Cristiano commence à 10h vendredi"</em>`;
   }
 
   // — CHANGER TÂCHE —
-  if ((m.includes('met') || m.includes('passe') || m.includes('affecte') || m.includes('tache') || m.includes('poste')) && personne && jour) {
-    const task = detectTask(m);
-    return actionChangerTache(personne, jour, task);
+  if (intent === 'tache') {
+    if (personne && jour && task) return await actionChangerTache(personne, jour, task);
+    if (personne && jour && !task) return `Quelle tâche pour <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> ? (Caisse, MEP, TDM, Polyvalent…)`;
+    if (personne && !jour) return `Quel jour voulez-vous changer la tâche de <strong>${personne.prenom}</strong> ?`;
+    if (!personne && task && jour) {
+      return `Qui voulez-vous mettre en <strong>${task}</strong> le <strong>${jour.label}</strong> ?`;
+    }
+    return `Précisez la personne, le jour et la tâche. Exemple : <em>"Lionel en caisse mercredi"</em>`;
   }
 
-  // — RESTAURER / ANNULER —
-  if ((m.includes('annule') || m.includes('restaure') || m.includes('remet') || m.includes('initial') || m.includes('ancien')) && personne && jour) {
-    return actionRestaurer(personne, jour);
+  // — ANNULER —
+  if (intent === 'annuler') {
+    if (m.includes('tout') || (!personne && !jour)) return await actionResetTotal();
+    if (personne && jour) return await actionRestaurer(personne, jour);
+    if (personne) return `Quel jour annuler pour <strong>${personne.prenom}</strong> ?`;
+    return await actionResetTotal();
   }
 
-  // — RESET TOTAL —
-  if (m.includes('reset') || (m.includes('annule') && m.includes('tout')) || m.includes('reinitialise')) {
-    return actionResetTotal();
-  }
-
-  // — VOIR PLANNING PERSONNE —
-  if (personne && (m.includes('planning') || m.includes('horaire') || m.includes('semaine') || m.includes('voir'))) {
-    return actionVoirPlanning(personne);
-  }
-
-  // — BILAN HEURES —
-  if (m.includes('heure') && (m.includes('restant') || m.includes('bilan') || m.includes('contrat') || m.includes('equipe'))) {
+  // — VOIR PLANNING —
+  if (intent === 'voir') {
+    if (personne) return actionVoirPlanning(personne);
     return actionBilanEquipe();
   }
 
-  // — CAISSE —
-  if (m.includes('caisse')) {
-    const planning = getEffectivePlanning();
-    const shifts = planning.flatMap(s =>
-      s.shifts.filter(sh => sh.task?.toLowerCase().includes('caisse'))
-        .map(sh => `<li><strong>${s.prenom}</strong> — ${sh.j} · ${sh.deb}h–${sh.fin}h</li>`)
-    ).join('');
-    return `Shifts caisse (planning actuel) :<br><ul>${shifts || '<li>Aucun</li>'}</ul>`;
+  // — BILAN HEURES —
+  if (intent === 'bilan') {
+    if (personne) return actionVoirPlanning(personne);
+    return actionBilanEquipe();
+  }
+
+  // — QUESTION GÉNÉRALE —
+  if (intent === 'question') {
+    // Qui est en caisse ?
+    if (m.includes('caisse')) {
+      const planning = getEffectivePlanning();
+      const shifts = planning.flatMap(s =>
+        s.shifts.map((sh, i) => sh.task?.toLowerCase().includes('caisse') && sh.deb > 0
+          ? `<li><strong>${s.prenom}</strong> — ${JOURS_LABEL[i]} · ${sh.deb}h–${sh.fin}h</li>` : null
+        ).filter(Boolean)
+      ).join('');
+      return `Shifts caisse cette semaine :<br><ul>${shifts || '<li>Aucun shift caisse planifié</li>'}</ul>`;
+    }
+    // Qui est là aujourd'hui ?
+    if (m.includes('aujourd') || m.includes('present') || m.includes('la aujourd')) {
+      const today = (new Date().getDay() + 6) % 7;
+      if (today < 6) {
+        const planning = getEffectivePlanning();
+        const presents = planning.filter(s => s.shifts[today]?.deb > 0);
+        const absents  = planning.filter(s => !s.shifts[today]?.deb);
+        return `Présents le <strong>${JOURS_LABEL[today]}</strong> :<br>
+<ul>${presents.map(s => `<li>✅ <strong>${s.prenom}</strong> — ${s.shifts[today].deb}h–${s.shifts[today].fin}h (${s.shifts[today].task})</li>`).join('')}</ul>
+${absents.length ? `En repos : ${absents.map(s => s.prenom).join(', ')}` : ''}`;
+      }
+    }
+    // Qui a ses repos ?
+    if (m.includes('repos')) {
+      const planning = getEffectivePlanning();
+      const lines = planning.map(s => {
+        const reposJours = s.shifts.map((sh, i) => !sh.deb ? JOURS_LABEL[i] : null).filter(Boolean);
+        return `<li><strong>${s.prenom}</strong> : ${reposJours.length ? reposJours.join(', ') : '⚠️ Aucun repos !'}</li>`;
+      }).join('');
+      return `Jours de repos cette semaine :<br><ul>${lines}</ul>`;
+    }
+    // Qui n'a pas de repos ?
+    if (m.includes('sans repos') || m.includes('pas de repos') || m.includes('tous les jours')) {
+      return actionAnalyserProbleme(m);
+    }
+    return actionBilanEquipe();
   }
 
   // — BONJOUR —
-  if (m.match(/^(bonjour|salut|hello|coucou|bonsoir)/)) {
+  if (m.match(/^(bonjour|salut|hello|coucou|bonsoir|bjr|slt)/)) {
     return getWelcomeMessage();
   }
 
   // — AIDE —
-  if (m.includes('aide') || m.includes('help') || m.includes('que peux') || m.includes('commande')) {
-    return `Voici ce que je peux faire directement :<br><br>
+  if (m.includes('aide') || m.includes('help') || m.includes('que peux') || m.includes('commande') || m.includes('quoi faire')) {
+    return `Voici ce que je comprends :<br><br>
 <ul>
-  <li>🔴 <strong>"Kylian est absent lundi"</strong> → le met en repos, réorganise</li>
-  <li>🕐 <strong>"Cristiano commence à 10h vendredi"</strong> → modifie les horaires</li>
-  <li>🔄 <strong>"Lionel passe en caisse mercredi"</strong> → change la tâche</li>
-  <li>↩️ <strong>"Annule la modif de Kylian lundi"</strong> → restaure le planning initial</li>
-  <li>↩️ <strong>"Annule tout"</strong> → remet le planning d'origine complet</li>
-  <li>📊 <strong>"Bilan heures équipe"</strong> → résumé des heures</li>
-  <li>📋 <strong>"Planning de Harry"</strong> → voir son planning complet</li>
+  <li>🔴 <em>"Kylian absent lundi"</em> → mis en repos, planning réorganisé</li>
+  <li>🕐 <em>"Cristiano commence à 10h vendredi"</em> → horaires modifiés</li>
+  <li>🔄 <em>"Lionel en caisse mercredi"</em> → tâche changée</li>
+  <li>❓ <em>"Qui est en caisse ?"</em> → liste les shifts caisse</li>
+  <li>❓ <em>"Qui est là aujourd'hui ?"</em> → présences du jour</li>
+  <li>❓ <em>"Qui n'a pas de repos ?"</em> → détecte les anomalies</li>
+  <li>📊 <em>"Bilan heures"</em> → résumé des heures de l'équipe</li>
+  <li>↩️ <em>"Annule tout"</em> → remet le planning initial</li>
 </ul>
-Toutes les modifications s'appliquent <strong>immédiatement</strong> sur les fiches employés.`;
+Parlez naturellement, je m'adapte ! 😊`;
   }
 
-  // — DÉFAUT —
-  return `Je n'ai pas compris la demande. Essayez par exemple :<br>
-<em>"Kylian est absent lundi"</em> ou <em>"Cristiano passe en caisse mercredi"</em>.<br><br>
-Tapez <strong>"aide"</strong> pour voir toutes les commandes disponibles.`;
+  // — DÉFAUT INTELLIGENT —
+  // Si on a une personne mais pas d'intention claire, montrer son planning
+  if (personne && !jour) return actionVoirPlanning(personne);
+  if (personne && jour && !intent) return actionVoirPlanning(personne);
+
+  // Dernier recours : analyser si c'est un problème
+  return `Je n'ai pas bien saisi. Pouvez-vous reformuler ?<br><br>
+Exemples : <em>"Kylian absent lundi"</em>, <em>"Qui est en caisse ?"</em>, <em>"Bilan heures"</em><br>
+Tapez <strong>aide</strong> pour voir toutes les commandes. 😊`;
 }
 
 // ——— Send message ——————————————————————————
-function sendMessage() {
+async function sendMessage() {
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if (!text) return;
 
   addUserMessage(text);
-  saveToHistory(text);
+  await syncSaveHistory(text);
+  renderHistory();
   input.value = '';
   input.style.height = 'auto';
 
   showTyping(true);
-  const delay = 700 + Math.random() * 600;
-  setTimeout(() => {
+  const delay = 700 + Math.random() * 500;
+  setTimeout(async () => {
     showTyping(false);
-    addBotMessage(generateResponse(text));
+    const response = await generateResponse(text);
+    addBotMessage(response);
   }, delay);
 }
 
@@ -955,22 +1126,14 @@ document.getElementById('quick-btns').addEventListener('click', e => {
 });
 
 // ——— History ——————————————————————————————
-function saveToHistory(msg) {
-  const history = JSON.parse(localStorage.getItem('noz_history') || '[]');
-  history.unshift({ msg, time: new Date().toLocaleString('fr-FR') });
-  if (history.length > 20) history.pop();
-  localStorage.setItem('noz_history', JSON.stringify(history));
-  renderHistory();
-}
-
-function renderHistory() {
+async function renderHistory() {
   const container = document.getElementById('history-list');
-  const history = JSON.parse(localStorage.getItem('noz_history') || '[]');
+  const history = await syncGetHistory();
   if (!history.length) {
     container.innerHTML = '<div class="history-empty">Aucune consigne pour l\'instant</div>';
     return;
   }
-  container.innerHTML = history.slice(0, 8).map(h =>
+  container.innerHTML = history.slice(0, 10).map(h =>
     `<div class="history-item">
       <div class="history-date">${h.time}</div>
       <div class="history-msg">${escHtml(h.msg)}</div>
@@ -978,8 +1141,8 @@ function renderHistory() {
   ).join('');
 }
 
-function clearHistory() {
-  localStorage.removeItem('noz_history');
+async function clearHistory() {
+  await syncClearHistory();
   renderHistory();
   showToast('Historique effacé');
 }
@@ -992,8 +1155,23 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-// Init
-renderHistory();
+// ——— INIT ————————————————————————————————
+async function boot() {
+  await initFirebase();
+  await syncGetOverrides();
+  renderHistory();
+}
+
+if (sessionStorage.getItem('noz_admin_auth') === '1') {
+  document.getElementById('lock-screen').classList.add('hidden');
+  document.getElementById('admin-app').classList.add('visible');
+  setTimeout(async () => {
+    await boot();
+    addBotMessage(getWelcomeMessage());
+  }, 300);
+} else {
+  boot();
+}
 </script>
 </body>
 </html>
