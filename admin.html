@@ -1050,13 +1050,25 @@ async function executeAction(jsonStr) {
 async function generateResponse(msg) {
   try {
     const reply = await callDeepSeek(msg);
-    // Détecte une réponse JSON pure
-    const jsonMatch = reply.match(/^\s*(\{[\s\S]*?\})\s*$/);
-    if (jsonMatch) {
-      const result = await executeAction(jsonMatch[1]);
-      if (result) return result;
+
+    // Détecte toutes les lignes JSON dans la réponse
+    const lines = reply.split('\n').map(l => l.trim()).filter(l => l.startsWith('{') && l.endsWith('}'));
+
+    if (lines.length > 0) {
+      // Exécute chaque action dans l'ordre
+      const results = [];
+      for (const line of lines) {
+        const result = await executeAction(line);
+        if (result) results.push(result);
+      }
+      if (results.length > 0) {
+        return results.join('<br><br>');
+      }
     }
+
+    // Réponse texte normale
     return reply.replace(/\n/g, '<br>');
+
   } catch (err) {
     console.error('DeepSeek:', err);
     return `⚠️ Impossible de joindre l'IA.<br><small style="color:var(--text-light)">${escHtml(err.message)}</small>`;
