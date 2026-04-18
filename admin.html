@@ -478,11 +478,14 @@
 <script src="data.js"></script>
 <script>
 // =============================================
-//  CONFIG — Changez le PIN ici
+//  CONFIG
 // =============================================
-const CORRECT_PIN = '1854';   // ← VOTRE CODE PIN (4 chiffres)
+const CORRECT_PIN  = '1854';
 const MAX_ATTEMPTS = 5;
-const LOCK_DURATION = 60;     // secondes de blocage après MAX_ATTEMPTS
+const LOCK_DURATION = 60;
+
+// Clé localStorage pour le planning dynamique
+const PLANNING_KEY = 'noz_planning_overrides';
 
 // =============================================
 //  PIN LOGIC
@@ -653,111 +656,263 @@ Vous pouvez me donner des consignes, signaler une absence, ou me demander d'ajus
 <strong>Que puis-je faire pour vous ?</strong>`;
 }
 
-// ——— AI Response Engine ———————————————————
-function generateResponse(msg) {
-  const m = msg.toLowerCase();
+// =============================================
+//  PLANNING OVERRIDE ENGINE
+//  Toutes les modifications sont stockées dans
+//  localStorage et appliquées par-dessus data.js
+// =============================================
 
-  // Heures restantes
-  if (m.includes('heure') && (m.includes('restant') || m.includes('contrat'))) {
-    const lines = STAFF.map(s => {
-      const total = s.shifts.reduce((sum, sh) => sum + (sh.deb ? sh.fin - sh.deb : 0), 0);
-      const ecart = total - s.contrat;
-      const icon = Math.abs(ecart) <= 1 ? '✅' : ecart > 0 ? '⬆️' : '⬇️';
-      return `<li>${icon} <strong>${s.prenom}</strong> — ${total}h/${s.contrat}h (${ecart >= 0 ? '+' : ''}${ecart}h)</li>`;
-    }).join('');
-    return `Voici le bilan des heures de la semaine :<br><ul>${lines}</ul>Tous les employés sont dans les clous (±1h toléré).`;
+function getOverrides() {
+  try { return JSON.parse(localStorage.getItem(PLANNING_KEY) || '[]'); }
+  catch { return []; }
+}
+function saveOverrides(list) {
+  localStorage.setItem(PLANNING_KEY, JSON.stringify(list));
+}
+
+// Applique un override : { prenom, jourIdx, deb, fin, task, note }
+function applyOverride(ov) {
+  const list = getOverrides().filter(o => !(o.prenom === ov.prenom && o.jourIdx === ov.jourIdx));
+  list.push(ov);
+  saveOverrides(list);
+}
+
+function removeOverride(prenom, jourIdx) {
+  const list = getOverrides().filter(o => !(o.prenom === prenom && o.jourIdx === jourIdx));
+  saveOverrides(list);
+}
+
+// Retourne le planning effectif (data.js + overrides)
+function getEffectivePlanning() {
+  const overrides = getOverrides();
+  return STAFF.map(s => {
+    const shifts = s.shifts.map((sh, idx) => {
+      const ov = overrides.find(o => o.prenom === s.prenom && o.jourIdx === idx);
+      return ov ? { j: sh.j, deb: ov.deb, fin: ov.fin, task: ov.task } : sh;
+    });
+    return { ...s, shifts };
+  });
+}
+
+// Résume le planning d'une personne en texte court
+function resumeShifts(s) {
+  const labels = ['L','Ma','Me','J','V','Sa'];
+  return s.shifts.map((sh, i) =>
+    sh.deb ? `<b>${labels[i]}</b>:${sh.deb}h-${sh.fin}h` : `<b>${labels[i]}</b>:Repos`
+  ).join(' · ');
+}
+
+// =============================================
+//  MOTEUR D'INTENTIONS
+// =============================================
+
+const JOURS_FR = { lundi:0, mardi:1, mercredi:2, jeudi:3, vendredi:4, samedi:5 };
+const JOURS_LABEL = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+
+function detectNom(m) {
+  return STAFF.find(s => m.includes(s.prenom.toLowerCase()));
+}
+function detectJour(m) {
+  for (const [j, idx] of Object.entries(JOURS_FR)) {
+    if (m.includes(j)) return { label: JOURS_LABEL[idx], idx };
   }
+  return null;
+}
+function detectHeure(m) {
+  const match = m.match(/(\d{1,2})[h:](\d{0,2})/);
+  return match ? parseInt(match[1]) : null;
+}
+function detectHeures(m) {
+  const matches = [...m.matchAll(/(\d{1,2})[h:](\d{0,2})/g)];
+  return matches.map(x => parseInt(x[1]));
+}
+function detectTask(m) {
+  if (m.includes('caisse'))     return 'Caisse';
+  if (m.includes('mep') || m.includes('mise en place')) return 'MEP';
+  if (m.includes('tdm'))        return 'TDM';
+  if (m.includes('polyvalent')) return 'Polyvalent';
+  if (m.includes('manager') || m.includes('gérant')) return 'Manager';
+  if (m.includes('cpro'))       return 'CPRO PM';
+  return 'Polyvalent';
+}
 
-  // Caisse
-  if (m.includes('caisse')) {
-    const caisseShifts = STAFF.flatMap(s =>
-      s.shifts.filter(sh => sh.task && sh.task.toLowerCase().includes('caisse'))
-        .map(sh => ({ prenom: s.prenom, jour: sh.j, deb: sh.deb, fin: sh.fin }))
+// =============================================
+//  ACTIONS RÉELLES
+// =============================================
+
+function actionAbsence(personne, jour) {
+  // Mettre en repos
+  applyOverride({ prenom: personne.prenom, jourIdx: jour.idx, deb: 0, fin: 0, task: null });
+
+  // Chercher un remplaçant pour la caisse si besoin
+  const planning = getEffectivePlanning();
+  const personneEff = planning.find(s => s.prenom === personne.prenom);
+  const shiftOriginal = personne.shifts[jour.idx];
+  const avaitCaisse = shiftOriginal?.task?.toLowerCase().includes('caisse');
+
+  let remplacantMsg = '';
+  if (avaitCaisse) {
+    // Trouver quelqu'un de disponible ce jour sans caisse
+    const dispo = planning.find(s =>
+      s.prenom !== personne.prenom &&
+      s.shifts[jour.idx]?.deb > 0 &&
+      !s.shifts[jour.idx]?.task?.toLowerCase().includes('caisse')
     );
-    if (caisseShifts.length === 0) return 'Aucun shift caisse planifié cette semaine.';
-    const lines = caisseShifts.map(c => `<li><strong>${c.prenom}</strong> — ${c.jour} de ${c.deb}h à ${c.fin}h</li>`).join('');
-    return `Voici les shifts caisse de la semaine :<br><ul>${lines}</ul>La caisse est couverte sans coupure chaque jour. ✅`;
-  }
-
-  // Absence
-  if (m.includes('absent') || m.includes('absence')) {
-    const nameMatch = STAFF.find(s => m.includes(s.prenom.toLowerCase()));
-    const jourMatch = ['lundi','mardi','mercredi','jeudi','vendredi','samedi'].find(j => m.includes(j));
-    if (nameMatch && jourMatch) {
-      return `Je note l'absence de <strong>${nameMatch.prenom}</strong> le <strong>${jourMatch}</strong>.<br><br>
-Actions à prévoir :<br>
-<ul>
-  <li>Vérifier si un autre ${nameMatch.role} peut couvrir le shift</li>
-  ${nameMatch.role === 'AM' ? '<li>Kylian passe en Relais AM pour la journée</li>' : ''}
-  ${nameMatch.role === 'EMP' ? '<li>Vérifier la présence caisse sans coupure</li>' : ''}
-  <li>Mettre à jour <code>data.js</code> : passer <code>deb: 0</code> pour ce jour</li>
-</ul>
-Souhaitez-vous que je génère le planning ajusté ?`;
+    if (dispo) {
+      applyOverride({ prenom: dispo.prenom, jourIdx: jour.idx, deb: dispo.shifts[jour.idx].deb, fin: dispo.shifts[jour.idx].fin, task: 'Caisse' });
+      remplacantMsg = `<br>🔄 <strong>${dispo.prenom}</strong> passe automatiquement en <strong>Caisse</strong> pour couvrir.`;
     }
-    return `Pour signaler une absence, précisez le nom et le jour. Exemple : <em>"Kylian est absent lundi"</em>.`;
   }
 
-  // Planning semaine prochaine
-  if ((m.includes('semaine') && m.includes('prochaine')) || m.includes('semaine 17')) {
-    return `Pour générer le planning de la semaine 17 (20–26 avr.), voici ce que je propose en respectant les règles NOZ :<br><br>
-<strong>Règles conservées :</strong><br>
-<ul>
-  <li>Mercredi & vendredi : EMP matin / CPRO après-midi</li>
-  <li>Rotation des repos pour équilibrer 35h/39h</li>
-  <li>Caisse sans coupure chaque jour</li>
-</ul>
-Pour appliquer, mettez à jour <code>data.js</code> avec les nouvelles dates et shifts.<br><br>
-Voulez-vous que je détaille jour par jour ?`;
+  // Si c'est un AM : Kylian prend le relais
+  let relaisMsg = '';
+  if (personne.role === 'AM') {
+    const kylian = planning.find(s => s.prenom === 'Kylian');
+    if (kylian && kylian.shifts[jour.idx]?.deb > 0) {
+      applyOverride({ prenom: 'Kylian', jourIdx: jour.idx, deb: kylian.shifts[jour.idx].deb, fin: kylian.shifts[jour.idx].fin, task: 'Relais AM' });
+      relaisMsg = `<br>👔 <strong>Kylian</strong> passe en <strong>Relais AM</strong> automatiquement.`;
+    }
   }
 
-  // Livraison
-  if (m.includes('livraison')) {
-    const jourMatch = ['lundi','mardi','mercredi','jeudi','vendredi','samedi'].find(j => m.includes(j)) || 'ce jour';
-    const heureMatch = msg.match(/(\d{1,2})h/)?.[0] || '7h';
-    return `Livraison <strong>${jourMatch} à ${heureMatch}</strong> prise en compte.<br><br>
-Organisation recommandée :<br>
-<ul>
-  <li>🚚 <strong>2 EMP dès ${heureMatch}</strong> pour réception marchandise</li>
-  <li>📦 Prévoir MEP immédiate après réception (~1h30)</li>
-  <li>🧾 Caisse maintenue en parallèle sans interruption</li>
-  <li>👔 AM présent à partir de 8h pour supervision</li>
-</ul>
-Consigne enregistrée dans l'historique. ✅`;
+  return `✅ <strong>${personne.prenom}</strong> est mis en repos le <strong>${jour.label}</strong>.${remplacantMsg}${relaisMsg}<br><br>
+Le planning est mis à jour en temps réel sur toutes les fiches. Aucune action supplémentaire requise.`;
+}
+
+function actionModifierHoraires(personne, jour, heures, task) {
+  if (heures.length >= 2) {
+    applyOverride({ prenom: personne.prenom, jourIdx: jour.idx, deb: heures[0], fin: heures[1], task });
+    return `✅ Horaires de <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> modifiés : <strong>${heures[0]}h → ${heures[1]}h</strong> (${task}).<br><br>Mis à jour sur toutes les fiches. ✓`;
+  }
+  return null;
+}
+
+function actionChangerTache(personne, jour, task) {
+  const sh = personne.shifts[jour.idx];
+  if (!sh?.deb) return `❌ ${personne.prenom} est déjà en repos ce jour-là.`;
+  applyOverride({ prenom: personne.prenom, jourIdx: jour.idx, deb: sh.deb, fin: sh.fin, task });
+  return `✅ Tâche de <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> changée en <strong>${task}</strong>.<br>Horaires conservés : ${sh.deb}h–${sh.fin}h.`;
+}
+
+function actionRestaurer(personne, jour) {
+  removeOverride(personne.prenom, jour.idx);
+  const original = personne.shifts[jour.idx];
+  const desc = original?.deb ? `${original.deb}h–${original.fin}h (${original.task})` : 'Repos';
+  return `↩️ Planning de <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> restauré au planning initial : <strong>${desc}</strong>.`;
+}
+
+function actionVoirPlanning(personne) {
+  const planning = getEffectivePlanning();
+  const eff = planning.find(s => s.prenom === personne.prenom);
+  const total = eff.shifts.reduce((sum, sh) => sum + (sh.deb ? sh.fin - sh.deb : 0), 0);
+  const overrides = getOverrides().filter(o => o.prenom === personne.prenom);
+  const modifTag = overrides.length ? ` <span style="background:#fef9c3;color:#92400e;font-size:10px;padding:1px 6px;border-radius:8px">${overrides.length} modif.</span>` : '';
+
+  return `Planning effectif de <strong>${personne.prenom}</strong>${modifTag} — ${total}h/${personne.contrat}h :<br><br>
+${resumeShifts(eff)}`;
+}
+
+function actionBilanEquipe() {
+  const planning = getEffectivePlanning();
+  const overrides = getOverrides();
+  const lines = planning.map(s => {
+    const total = s.shifts.reduce((sum, sh) => sum + (sh.deb ? sh.fin - sh.deb : 0), 0);
+    const ok = Math.abs(total - s.contrat) <= 1;
+    const modifs = overrides.filter(o => o.prenom === s.prenom).length;
+    const modifBadge = modifs ? ` <span style="font-size:10px;color:#92400e">✏️${modifs}</span>` : '';
+    return `<li>${ok?'✅':'⚠️'} <strong>${s.prenom}</strong>${modifBadge} — ${total}h/${s.contrat}h</li>`;
+  }).join('');
+  const totalModifs = overrides.length;
+  return `Bilan équipe (planning en cours) :<br><ul>${lines}</ul>${totalModifs ? `<em style="font-size:11px;color:var(--text-muted)">${totalModifs} modification(s) appliquée(s) par rapport au planning initial.</em>` : ''}`;
+}
+
+function actionResetTotal() {
+  localStorage.removeItem(PLANNING_KEY);
+  return `↩️ Toutes les modifications ont été annulées. Le planning initial est restauré sur toutes les fiches.`;
+}
+
+// =============================================
+//  ROUTER D'INTENTIONS
+// =============================================
+
+function generateResponse(msg) {
+  const m = msg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
+  const personne = detectNom(m);
+  const jour     = detectJour(m);
+
+  // — ABSENCE / REPOS —
+  if ((m.includes('absent') || m.includes('absence') || m.includes('repos') || m.includes('conge') || m.includes('maladie')) && personne && jour) {
+    return actionAbsence(personne, jour);
   }
 
-  // Règles
-  if (m.includes('règle') || m.includes('regle') || m.includes('consigne')) {
-    return `Voici les règles de planning actives pour NOZ P854 :<br>
-<ul>
-  <li>📅 <strong>Mercredi & vendredi</strong> : EMP obligatoirement le matin, CPRO l'après-midi</li>
-  <li>⚡ <strong>Repos EMP</strong> → AM prend le relais managérial</li>
-  <li>🧾 <strong>1 caisse sans coupure</strong> obligatoire (9h–19h min)</li>
-  <li>👥 <strong>AM + min 2 EMP</strong> présents simultanément</li>
-  <li>⏱ <strong>Antoine & Kylian</strong> : 39h/sem · reste de l'équipe : 35h/sem</li>
-</ul>`;
+  // — MODIFIER HORAIRES —
+  if ((m.includes('change') || m.includes('modifie') || m.includes('decale') || m.includes('commence') || m.includes('finit') || m.includes('horaire')) && personne && jour) {
+    const heures = detectHeures(m);
+    const task   = detectTask(m) || personne.shifts[jour.idx]?.task || 'Polyvalent';
+    const result = actionModifierHoraires(personne, jour, heures, task);
+    if (result) return result;
   }
 
-  // Planning complet
-  if (m.includes('planning') || m.includes('semaine 16')) {
-    const lignes = STAFF.map(s => {
-      const total = s.shifts.reduce((sum, sh) => sum + (sh.deb ? sh.fin - sh.deb : 0), 0);
-      const shifts = s.shifts.map((sh, i) => sh.deb ? `${['L','M','Me','J','V','S'][i]}:${sh.deb}-${sh.fin}h` : `${['L','M','Me','J','V','S'][i]}:R`).join(' ');
-      return `<li><strong>${s.prenom}</strong> (${total}h) — ${shifts}</li>`;
-    }).join('');
-    return `Planning semaine 16 en résumé :<br><ul>${lignes}</ul>
-<span class="tag">L</span> Lun <span class="tag">M</span> Mar <span class="tag">Me</span> Mer <span class="tag">J</span> Jeu <span class="tag">V</span> Ven <span class="tag">S</span> Sam <span class="tag">R</span> Repos`;
+  // — CHANGER TÂCHE —
+  if ((m.includes('met') || m.includes('passe') || m.includes('affecte') || m.includes('tache') || m.includes('poste')) && personne && jour) {
+    const task = detectTask(m);
+    return actionChangerTache(personne, jour, task);
   }
 
-  // Bonjour / salut
+  // — RESTAURER / ANNULER —
+  if ((m.includes('annule') || m.includes('restaure') || m.includes('remet') || m.includes('initial') || m.includes('ancien')) && personne && jour) {
+    return actionRestaurer(personne, jour);
+  }
+
+  // — RESET TOTAL —
+  if (m.includes('reset') || (m.includes('annule') && m.includes('tout')) || m.includes('reinitialise')) {
+    return actionResetTotal();
+  }
+
+  // — VOIR PLANNING PERSONNE —
+  if (personne && (m.includes('planning') || m.includes('horaire') || m.includes('semaine') || m.includes('voir'))) {
+    return actionVoirPlanning(personne);
+  }
+
+  // — BILAN HEURES —
+  if (m.includes('heure') && (m.includes('restant') || m.includes('bilan') || m.includes('contrat') || m.includes('equipe'))) {
+    return actionBilanEquipe();
+  }
+
+  // — CAISSE —
+  if (m.includes('caisse')) {
+    const planning = getEffectivePlanning();
+    const shifts = planning.flatMap(s =>
+      s.shifts.filter(sh => sh.task?.toLowerCase().includes('caisse'))
+        .map(sh => `<li><strong>${s.prenom}</strong> — ${sh.j} · ${sh.deb}h–${sh.fin}h</li>`)
+    ).join('');
+    return `Shifts caisse (planning actuel) :<br><ul>${shifts || '<li>Aucun</li>'}</ul>`;
+  }
+
+  // — BONJOUR —
   if (m.match(/^(bonjour|salut|hello|coucou|bonsoir)/)) {
     return getWelcomeMessage();
   }
 
-  // Défaut
-  return `Compris ! Voici ce que j'ai retenu :<br><br>
-<blockquote style="border-left:3px solid var(--noz-navy,#0D2240);padding-left:12px;margin:4px 0;color:var(--text-muted)">"${escHtml(msg)}"</blockquote><br>
-Consigne enregistrée. Pour l'appliquer concrètement dans le planning, mettez à jour <code>data.js</code>.<br><br>
-Besoin d'autre chose ?`;
+  // — AIDE —
+  if (m.includes('aide') || m.includes('help') || m.includes('que peux') || m.includes('commande')) {
+    return `Voici ce que je peux faire directement :<br><br>
+<ul>
+  <li>🔴 <strong>"Kylian est absent lundi"</strong> → le met en repos, réorganise</li>
+  <li>🕐 <strong>"Cristiano commence à 10h vendredi"</strong> → modifie les horaires</li>
+  <li>🔄 <strong>"Lionel passe en caisse mercredi"</strong> → change la tâche</li>
+  <li>↩️ <strong>"Annule la modif de Kylian lundi"</strong> → restaure le planning initial</li>
+  <li>↩️ <strong>"Annule tout"</strong> → remet le planning d'origine complet</li>
+  <li>📊 <strong>"Bilan heures équipe"</strong> → résumé des heures</li>
+  <li>📋 <strong>"Planning de Harry"</strong> → voir son planning complet</li>
+</ul>
+Toutes les modifications s'appliquent <strong>immédiatement</strong> sur les fiches employés.`;
+  }
+
+  // — DÉFAUT —
+  return `Je n'ai pas compris la demande. Essayez par exemple :<br>
+<em>"Kylian est absent lundi"</em> ou <em>"Cristiano passe en caisse mercredi"</em>.<br><br>
+Tapez <strong>"aide"</strong> pour voir toutes les commandes disponibles.`;
 }
 
 // ——— Send message ——————————————————————————

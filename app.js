@@ -3,6 +3,18 @@
 //  app.js — logique principale
 // =============================================
 
+/* ——— PLANNING OVERRIDES (modifications admin) ——— */
+function getOverrides() {
+  try { return JSON.parse(localStorage.getItem('noz_planning_overrides') || '[]'); }
+  catch { return []; }
+}
+
+function getEffectiveShift(prenom, jourIdx, originalShift) {
+  const overrides = getOverrides();
+  const ov = overrides.find(o => o.prenom === prenom && o.jourIdx === jourIdx);
+  return ov ? { j: originalShift.j, deb: ov.deb, fin: ov.fin, task: ov.task } : originalShift;
+}
+
 /* ——— NAV ——————————————————————————————————— */
 function buildNav() {
   const nav = document.getElementById('nav');
@@ -86,11 +98,13 @@ function buildGlobalPage() {
 
     const cells = JOURS.slice(0, 6).map((j, idx) => {
       const sh = s.shifts[idx];
-      if (!sh || !sh.deb) return `<td style="padding:5px 4px"><span class="shift-pill shift-repos">Repos</span></td>`;
-      const t = TASKS[sh.task] || { color: '#888', label: sh.task };
+      const eff = getEffectiveShift(s.prenom, idx, sh || { j, deb: 0, fin: 0, task: null });
+      const isOv = getOverrides().some(o => o.prenom === s.prenom && o.jourIdx === idx);
+      if (!eff || !eff.deb) return `<td style="padding:5px 4px"><span class="shift-pill shift-repos">${isOv?'⚡ ':''}</span></td>`;
+      const t = TASKS[eff.task] || { color: '#888', label: eff.task };
       return `<td style="padding:5px 4px">
-        <span class="shift-pill" style="background:${t.color}" title="${sh.task} — ${sh.deb}h à ${sh.fin}h">
-          ${sh.deb}h–${sh.fin}h
+        <span class="shift-pill" style="background:${t.color};${isOv?'outline:2px solid #fbbf24;outline-offset:1px':''}" title="${eff.task} — ${eff.deb}h à ${eff.fin}h${isOv?' (modifié)':''}">
+          ${eff.deb}h–${eff.fin}h
         </span>
       </td>`;
     }).join('');
@@ -186,28 +200,32 @@ function buildPersonPage(s, i) {
     const jour = JOURS[idx];
     const jourFull = JOURS_FULL[jour];
     const date = JOURS_DATES[jour];
+    // Appliquer les overrides admin
+    const eff = getEffectiveShift(s.prenom, idx, sh);
+    const isOverride = getOverrides().some(o => o.prenom === s.prenom && o.jourIdx === idx);
 
-    if (!sh.deb) {
+    if (!eff.deb) {
       return `
         <div class="day-card repos">
           <div class="day-card-inner">
             <span class="day-label">${jour}</span>
             <span class="day-date">${jourFull} ${date}</span>
-            <span style="font-size:12px;color:var(--text-light);font-style:italic">Jour de repos</span>
+            <span style="font-size:12px;color:var(--text-light);font-style:italic">Jour de repos${isOverride ? ' <span style="font-size:10px;background:#fef9c3;color:#92400e;padding:1px 5px;border-radius:8px">modifié</span>' : ''}</span>
           </div>
         </div>`;
     }
 
-    const t = TASKS[sh.task] || { color: '#888', label: sh.task || '' };
-    const dur = sh.fin - sh.deb;
+    const t = TASKS[eff.task] || { color: '#888', label: eff.task || '' };
+    const dur = eff.fin - eff.deb;
 
-    const leftPct  = ((sh.deb - TL_START) / TL_SPAN * 100).toFixed(1);
+    const leftPct  = ((eff.deb - TL_START) / TL_SPAN * 100).toFixed(1);
     const widthPct = (dur / TL_SPAN * 100).toFixed(1);
 
     const ticks = [];
     for (let h = TL_START; h <= TL_END; h += 3) {
       ticks.push(`<span>${h}h</span>`);
     }
+    const modifBadge = isOverride ? `<span style="font-size:9px;background:#fef9c3;color:#92400e;padding:1px 5px;border-radius:8px;margin-left:6px">modifié</span>` : '';
 
     return `
       <div class="day-card">
@@ -215,13 +233,13 @@ function buildPersonPage(s, i) {
           <span class="day-label">${jour}</span>
           <span class="day-date">${jourFull} ${date}</span>
           <span class="day-task-badge" style="background:${t.color}">${t.label}</span>
-          <span class="day-hours-range" style="margin-left:8px">${sh.deb}h00 → ${sh.fin}h00</span>
+          <span class="day-hours-range" style="margin-left:8px">${eff.deb}h00 → ${eff.fin}h00${modifBadge}</span>
           <span class="day-dur">${dur}h</span>
         </div>
         <div class="tl-wrap">
           <div class="tl-track">
             <div class="tl-fill" style="left:${leftPct}%;width:${widthPct}%;background:${t.color}">
-              ${sh.deb}h–${sh.fin}h
+              ${eff.deb}h–${eff.fin}h
             </div>
           </div>
           <div class="tl-ticks">${ticks.join('')}</div>
