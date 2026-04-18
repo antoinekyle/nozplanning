@@ -3,7 +3,7 @@
 //  app.js — logique principale
 // =============================================
 
-/* ——— PLANNING OVERRIDES (modifications admin) ——— */
+/* ——— PLANNING OVERRIDES (Firebase sync) ——— */
 function getOverrides() {
   try { return JSON.parse(localStorage.getItem('noz_planning_overrides') || '[]'); }
   catch { return []; }
@@ -13,6 +13,45 @@ function getEffectiveShift(prenom, jourIdx, originalShift) {
   const overrides = getOverrides();
   const ov = overrides.find(o => o.prenom === prenom && o.jourIdx === jourIdx);
   return ov ? { j: originalShift.j, deb: ov.deb, fin: ov.fin, task: ov.task } : originalShift;
+}
+
+// Recharge tout le planning quand Firebase notifie un changement
+function onRemoteChange() {
+  // Reconstruire toutes les pages employés
+  STAFF.forEach((s, i) => {
+    const page = document.getElementById('page-p' + i);
+    if (!page) return;
+    const wasActive = page.classList.contains('active');
+    page.remove();
+    buildPersonPage(s, i);
+    if (wasActive) document.getElementById('page-p' + i)?.classList.add('active');
+    // Re-render consignes
+    const container = document.getElementById('consignes-' + i);
+    const countEl   = document.getElementById('consigne-count-' + i);
+    if (container) renderConsignesFor(s.prenom, container, countEl);
+  });
+  // Reconstruire le tableau global
+  const global = document.getElementById('page-global');
+  if (global) {
+    const wasActive = global.classList.contains('active');
+    global.remove();
+    buildGlobalPage();
+    if (wasActive) document.getElementById('page-global')?.classList.add('active');
+  }
+  showSyncToast('Planning mis à jour ↗');
+}
+
+function showSyncToast(msg) {
+  let t = document.getElementById('sync-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'sync-toast';
+    t.style.cssText = 'position:fixed;top:60px;right:12px;background:#0D2240;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:500;z-index:9999;opacity:0;transition:opacity 0.3s;pointer-events:none';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  setTimeout(() => t.style.opacity = '0', 2500);
 }
 
 /* ——— NAV ——————————————————————————————————— */
@@ -260,6 +299,9 @@ function buildPersonPage(s, i) {
       </div>
     </div>
 
+    <!-- ONGLET CONSIGNES — visible en haut, juste sous le header -->
+    <div id="consignes-tab-${i}" style="margin-bottom:14px"></div>
+
     <div class="week-list">${dayCards}</div>
 
     <div style="margin-top:12px;padding:10px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:space-between;font-size:12px;">
@@ -267,14 +309,6 @@ function buildPersonPage(s, i) {
       <span style="font-weight:700;color:${ok?'#16a34a':'#ea580c'}">
         ${total}h / ${s.contrat}h · Écart : ${total >= s.contrat ? '+' : ''}${total - s.contrat}h
       </span>
-    </div>
-
-    <div style="margin-top:16px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:8px;display:flex;align-items:center;gap:8px">
-        Consignes du gérant
-        <span id="consigne-count-${i}" style="background:var(--noz-red);color:#fff;font-size:9px;padding:1px 6px;border-radius:10px;font-weight:700"></span>
-      </div>
-      <div id="consignes-${i}"></div>
     </div>
   `;
 
@@ -487,41 +521,75 @@ function deleteConsigne(id) {
 
 function renderConsignesFor(prenom, containerEl, countEl) {
   const list = getConsignesFor(prenom);
+
+  // Met à jour le badge de comptage dans la nav
   if (countEl) countEl.textContent = list.length > 0 ? list.length : '';
 
+  // Cherche l'index de la personne pour mettre à jour l'onglet du haut
+  const idx = STAFF.findIndex(s => s.prenom === prenom);
+  const tabEl = idx >= 0 ? document.getElementById('consignes-tab-' + idx) : null;
+
   if (!list.length) {
-    containerEl.innerHTML = '<div class="consigne-empty">Aucune consigne en cours</div>';
+    // Pas de consigne → on cache l'onglet proprement
+    if (tabEl) tabEl.innerHTML = '';
     return;
   }
 
-  containerEl.innerHTML = list.map(c => {
-    const icons = { haute: '🔴', normale: '🟡', info: '🔵' };
-    const icon  = icons[c.priority] || '🟡';
-    return `
-      <div class="consigne-banner priority-${c.priority}" data-id="${c.id}">
-        <span class="consigne-icon">${icon}</span>
-        <div class="consigne-body">
-          <div class="consigne-from">
-            ${c.from}
-            <span class="priority-badge priority-${c.priority}">${c.priority}</span>
-            ${c.dest === 'Tous' ? '<span class="priority-badge" style="background:var(--bg-muted);color:var(--text-muted)">Tous</span>' : ''}
-          </div>
-          <div class="consigne-text">${escHtml(c.text)}</div>
-          <div class="consigne-date">${c.date}</div>
+  const icons = { haute: '🔴', normale: '🟡', info: '🔵' };
+
+  // Rendu dans l'onglet en haut de la fiche
+  if (tabEl) {
+    tabEl.innerHTML = `
+      <div style="
+        background: #fff8f0;
+        border: 1.5px solid #f97316;
+        border-radius: var(--radius-md);
+        overflow: hidden;
+      ">
+        <div style="
+          background: #f97316;
+          padding: 8px 14px;
+          display: flex; align-items: center; gap: 8px;
+        ">
+          <span style="font-size:14px">📌</span>
+          <span style="color:#fff;font-size:12px;font-weight:700;letter-spacing:.3px">
+            CONSIGNES DU GÉRANT
+          </span>
+          <span style="
+            background: rgba(255,255,255,0.3);
+            color: #fff;
+            font-size:10px; font-weight:700;
+            padding: 1px 7px; border-radius: 10px;
+            margin-left: 2px;
+          ">${list.length}</span>
         </div>
-        <button class="consigne-del" onclick="deleteConsigne(${c.id})" title="Supprimer">×</button>
+        <div style="padding: 10px 14px; display:flex; flex-direction:column; gap:8px;">
+          ${list.map(c => `
+            <div style="display:flex;align-items:flex-start;gap:8px">
+              <span style="font-size:13px;flex-shrink:0;margin-top:1px">${icons[c.priority] || '🟡'}</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;color:#7c2d12;font-weight:500;line-height:1.4">
+                  ${escHtml(c.text)}
+                </div>
+                <div style="font-size:10px;color:#c2410c;margin-top:2px">
+                  ${c.from} · ${c.date}
+                  ${c.dest === 'Tous' ? '<span style="background:#fed7aa;color:#c2410c;padding:0 5px;border-radius:8px;margin-left:4px;font-size:9px">Toute l\'équipe</span>' : ''}
+                </div>
+              </div>
+            </div>
+          `).join('<hr style="border:none;border-top:1px solid #fed7aa;margin:2px 0">')}
+        </div>
       </div>`;
-  }).join('');
+  }
 }
 
 function refreshAllConsignes() {
   STAFF.forEach((s, i) => {
-    const container = document.getElementById('consignes-' + i);
-    const countEl   = document.getElementById('consigne-count-' + i);
-    if (container) renderConsignesFor(s.prenom, container, countEl);
+    const countEl = document.getElementById('consigne-count-' + i);
+    renderConsignesFor(s.prenom, null, countEl);
   });
-  // Refresh consignes page if open
   renderConsignesPage();
+  updateNavBadges();
 }
 
 function updateNavBadges() {
@@ -646,7 +714,7 @@ function clearAllConsignes() {
 }
 
 /* ——— INIT ———————————————————————————————— */
-function init() {
+async function init() {
   document.getElementById('week-badge').textContent = `Semaine ${SEMAINE.numero}`;
 
   buildNav();
@@ -655,15 +723,32 @@ function init() {
   buildConsignesPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
 
-  // Render consignes on person pages
   STAFF.forEach((s, i) => {
-    const container = document.getElementById('consignes-' + i);
-    const countEl   = document.getElementById('consigne-count-' + i);
-    if (container) renderConsignesFor(s.prenom, container, countEl);
+    const countEl = document.getElementById('consigne-count-' + i);
+    renderConsignesFor(s.prenom, null, countEl);
   });
 
   showPage('global');
   setupPDF();
+
+  // Firebase : charger les données puis écouter les changements en temps réel
+  if (typeof initFirebase === 'function') {
+    await initFirebase();
+    await syncGetOverrides();
+    onRemoteChange();
+
+    startRealTimeSync(
+      () => onRemoteChange(),
+      () => {
+        STAFF.forEach((s, i) => {
+          const ct = document.getElementById('consigne-count-' + i);
+          renderConsignesFor(s.prenom, null, ct);
+        });
+        renderConsignesPage();
+        showSyncToast('Consignes mises à jour ↗');
+      }
+    );
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);
