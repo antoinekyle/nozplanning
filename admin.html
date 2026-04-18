@@ -945,143 +945,122 @@ Dites-moi quel jour mettre en repos. Exemple : <em>"${noms[0]} est en repos lund
   return `J'ai analysé le planning. Voici ce que je vois :<br>${actionBilanEquipe()}<br><br>Tout semble correct. Si vous voyez un problème précis, décrivez-le moi.`;
 }
 
+
 // =============================================
-//  ROUTER D'INTENTIONS — VERSION INTELLIGENTE
+//  DEEPSEEK IA — Cerveau de l'assistant
 // =============================================
+
+const DEEPSEEK_KEY = 'sk-f6aa3fc02dcd4c66a2a2d9367519aa67';
+const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
+let conversationHistory = [];
+
+function buildSystemPrompt() {
+  const planning = getEffectivePlanning();
+  const overrides = getOverrides();
+  const planningText = planning.map(s => {
+    const shifts = s.shifts.map((sh, i) => {
+      const j = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'][i];
+      return sh.deb ? `${j}:${sh.deb}h-${sh.fin}h(${sh.task})` : `${j}:Repos`;
+    }).join(', ');
+    const total = s.shifts.reduce((sum, sh) => sum + (sh.deb ? sh.fin - sh.deb : 0), 0);
+    return `- ${s.prenom} ${s.nom} (${s.role}, contrat ${s.contrat}h, planifié ${total}h): ${shifts}`;
+  }).join('\n');
+  const modifs = overrides.length > 0
+    ? `\nModifications actives: ${overrides.map(o => `${o.prenom} ${['Lun','Mar','Mer','Jeu','Ven','Sam'][o.jourIdx]}: ${o.deb ? o.deb+'h-'+o.fin+'h('+o.task+')' : 'Repos'}`).join(', ')}`
+    : '';
+  return `Tu es l'assistant planning de ${SEMAINE.magasin}, géré par Antoine Benoit (Gérant).
+Tu parles en français, de façon concise et directe. Tu agis immédiatement sans dire "je vais faire".
+
+PLANNING SEMAINE ${SEMAINE.numero}:
+${planningText}${modifs}
+
+RÈGLES NOZ: Mercredi+Vendredi: EMP matin/CPRO après-midi. Repos EMP→Kylian Relais AM. 1 caisse obligatoire/jour. AM+2 EMP min simultanés. Antoine/Kylian:39h, autres:35h.
+
+ACTIONS — Si la demande nécessite une modification, réponds UNIQUEMENT avec du JSON valide sur une seule ligne:
+{"action":"absence","prenom":"Kylian","jourIdx":0}
+{"action":"horaire","prenom":"Cristiano","jourIdx":4,"deb":10,"fin":18,"task":"Polyvalent"}
+{"action":"tache","prenom":"Lionel","jourIdx":2,"task":"Caisse"}
+{"action":"restaurer","prenom":"Harry","jourIdx":1}
+{"action":"reset"}
+{"action":"bilan"}
+{"action":"voir","prenom":"Kylian"}
+
+jourIdx: 0=Lundi 1=Mardi 2=Mercredi 3=Jeudi 4=Vendredi 5=Samedi
+Règle absolue: JSON seul si action, texte seul si question/info. Jamais les deux mélangés.`;
+}
+
+async function callDeepSeek(userMessage) {
+  conversationHistory.push({ role: 'user', content: userMessage });
+  const resp = await fetch(DEEPSEEK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: buildSystemPrompt() },
+        ...conversationHistory.slice(-10),
+      ],
+      temperature: 0.2,
+      max_tokens: 400,
+    }),
+  });
+  if (!resp.ok) throw new Error(`Erreur API ${resp.status}: ${await resp.text()}`);
+  const data = await resp.json();
+  const reply = data.choices[0].message.content.trim();
+  conversationHistory.push({ role: 'assistant', content: reply });
+  return reply;
+}
+
+async function executeAction(jsonStr) {
+  let action;
+  try { action = JSON.parse(jsonStr.trim()); } catch { return null; }
+  const JL = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+  switch (action.action) {
+    case 'absence': {
+      const p = STAFF.find(s => s.prenom === action.prenom);
+      if (!p) return `❌ Employé "${action.prenom}" introuvable.`;
+      return await actionAbsence(p, { idx: action.jourIdx, label: JL[action.jourIdx] });
+    }
+    case 'horaire': {
+      const p = STAFF.find(s => s.prenom === action.prenom);
+      if (!p) return `❌ Employé "${action.prenom}" introuvable.`;
+      await applyOverride({ prenom: p.prenom, jourIdx: action.jourIdx, deb: action.deb, fin: action.fin, task: action.task || p.shifts[action.jourIdx]?.task || 'Polyvalent' });
+      return `✅ <strong>${p.prenom}</strong> le <strong>${JL[action.jourIdx]}</strong> : <strong>${action.deb}h → ${action.fin}h</strong> (${action.task}). ✓`;
+    }
+    case 'tache': {
+      const p = STAFF.find(s => s.prenom === action.prenom);
+      if (!p) return `❌ Employé "${action.prenom}" introuvable.`;
+      return await actionChangerTache(p, { idx: action.jourIdx, label: JL[action.jourIdx] }, action.task);
+    }
+    case 'restaurer': {
+      const p = STAFF.find(s => s.prenom === action.prenom);
+      if (!p) return `❌ Employé "${action.prenom}" introuvable.`;
+      return await actionRestaurer(p, { idx: action.jourIdx, label: JL[action.jourIdx] });
+    }
+    case 'reset': return await actionResetTotal();
+    case 'bilan': return actionBilanEquipe();
+    case 'voir': {
+      const p = STAFF.find(s => s.prenom === action.prenom);
+      return p ? actionVoirPlanning(p) : actionBilanEquipe();
+    }
+    default: return null;
+  }
+}
 
 async function generateResponse(msg) {
-  const m = norm(msg);
-  const intent   = detectIntent(m);
-  const personne = detectNom(m);
-  const jour     = detectJour(m);
-  const heures   = detectHeures(m);
-  const task     = detectTask(m);
-
-  // — PROBLÈME / SOUCIS —
-  if (intent === 'probleme') {
-    return actionAnalyserProbleme(m);
-  }
-
-  // — ABSENCE / REPOS — (avec ou sans nom précis)
-  if (intent === 'absence') {
-    if (personne && jour) return await actionAbsence(personne, jour);
-    if (personne && !jour) return `Pour quelle journée <strong>${personne.prenom}</strong> est absent(e) ? (lundi, mardi, mercredi…)`;
-    if (!personne && jour) return `Qui est absent(e) le <strong>${jour.label}</strong> ?`;
-    return `Qui est absent(e) et quel jour ? Exemple : <em>"Kylian est absent lundi"</em>`;
-  }
-
-  // — MODIFIER HORAIRES —
-  if (intent === 'horaire') {
-    if (personne && jour) {
-      const result = await actionModifierHoraires(personne, jour, heures, task);
+  try {
+    const reply = await callDeepSeek(msg);
+    // Détecte une réponse JSON pure
+    const jsonMatch = reply.match(/^\s*(\{[\s\S]*?\})\s*$/);
+    if (jsonMatch) {
+      const result = await executeAction(jsonMatch[1]);
       if (result) return result;
-      return `Quels sont les nouveaux horaires de <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> ? (ex: 9h à 17h)`;
     }
-    if (personne && !jour) return `Quel jour voulez-vous modifier les horaires de <strong>${personne.prenom}</strong> ?`;
-    return `Précisez la personne et le jour. Exemple : <em>"Cristiano commence à 10h vendredi"</em>`;
+    return reply.replace(/\n/g, '<br>');
+  } catch (err) {
+    console.error('DeepSeek:', err);
+    return `⚠️ Impossible de joindre l'IA.<br><small style="color:var(--text-light)">${escHtml(err.message)}</small>`;
   }
-
-  // — CHANGER TÂCHE —
-  if (intent === 'tache') {
-    if (personne && jour && task) return await actionChangerTache(personne, jour, task);
-    if (personne && jour && !task) return `Quelle tâche pour <strong>${personne.prenom}</strong> le <strong>${jour.label}</strong> ? (Caisse, MEP, TDM, Polyvalent…)`;
-    if (personne && !jour) return `Quel jour voulez-vous changer la tâche de <strong>${personne.prenom}</strong> ?`;
-    if (!personne && task && jour) {
-      return `Qui voulez-vous mettre en <strong>${task}</strong> le <strong>${jour.label}</strong> ?`;
-    }
-    return `Précisez la personne, le jour et la tâche. Exemple : <em>"Lionel en caisse mercredi"</em>`;
-  }
-
-  // — ANNULER —
-  if (intent === 'annuler') {
-    if (m.includes('tout') || (!personne && !jour)) return await actionResetTotal();
-    if (personne && jour) return await actionRestaurer(personne, jour);
-    if (personne) return `Quel jour annuler pour <strong>${personne.prenom}</strong> ?`;
-    return await actionResetTotal();
-  }
-
-  // — VOIR PLANNING —
-  if (intent === 'voir') {
-    if (personne) return actionVoirPlanning(personne);
-    return actionBilanEquipe();
-  }
-
-  // — BILAN HEURES —
-  if (intent === 'bilan') {
-    if (personne) return actionVoirPlanning(personne);
-    return actionBilanEquipe();
-  }
-
-  // — QUESTION GÉNÉRALE —
-  if (intent === 'question') {
-    // Qui est en caisse ?
-    if (m.includes('caisse')) {
-      const planning = getEffectivePlanning();
-      const shifts = planning.flatMap(s =>
-        s.shifts.map((sh, i) => sh.task?.toLowerCase().includes('caisse') && sh.deb > 0
-          ? `<li><strong>${s.prenom}</strong> — ${JOURS_LABEL[i]} · ${sh.deb}h–${sh.fin}h</li>` : null
-        ).filter(Boolean)
-      ).join('');
-      return `Shifts caisse cette semaine :<br><ul>${shifts || '<li>Aucun shift caisse planifié</li>'}</ul>`;
-    }
-    // Qui est là aujourd'hui ?
-    if (m.includes('aujourd') || m.includes('present') || m.includes('la aujourd')) {
-      const today = (new Date().getDay() + 6) % 7;
-      if (today < 6) {
-        const planning = getEffectivePlanning();
-        const presents = planning.filter(s => s.shifts[today]?.deb > 0);
-        const absents  = planning.filter(s => !s.shifts[today]?.deb);
-        return `Présents le <strong>${JOURS_LABEL[today]}</strong> :<br>
-<ul>${presents.map(s => `<li>✅ <strong>${s.prenom}</strong> — ${s.shifts[today].deb}h–${s.shifts[today].fin}h (${s.shifts[today].task})</li>`).join('')}</ul>
-${absents.length ? `En repos : ${absents.map(s => s.prenom).join(', ')}` : ''}`;
-      }
-    }
-    // Qui a ses repos ?
-    if (m.includes('repos')) {
-      const planning = getEffectivePlanning();
-      const lines = planning.map(s => {
-        const reposJours = s.shifts.map((sh, i) => !sh.deb ? JOURS_LABEL[i] : null).filter(Boolean);
-        return `<li><strong>${s.prenom}</strong> : ${reposJours.length ? reposJours.join(', ') : '⚠️ Aucun repos !'}</li>`;
-      }).join('');
-      return `Jours de repos cette semaine :<br><ul>${lines}</ul>`;
-    }
-    // Qui n'a pas de repos ?
-    if (m.includes('sans repos') || m.includes('pas de repos') || m.includes('tous les jours')) {
-      return actionAnalyserProbleme(m);
-    }
-    return actionBilanEquipe();
-  }
-
-  // — BONJOUR —
-  if (m.match(/^(bonjour|salut|hello|coucou|bonsoir|bjr|slt)/)) {
-    return getWelcomeMessage();
-  }
-
-  // — AIDE —
-  if (m.includes('aide') || m.includes('help') || m.includes('que peux') || m.includes('commande') || m.includes('quoi faire')) {
-    return `Voici ce que je comprends :<br><br>
-<ul>
-  <li>🔴 <em>"Kylian absent lundi"</em> → mis en repos, planning réorganisé</li>
-  <li>🕐 <em>"Cristiano commence à 10h vendredi"</em> → horaires modifiés</li>
-  <li>🔄 <em>"Lionel en caisse mercredi"</em> → tâche changée</li>
-  <li>❓ <em>"Qui est en caisse ?"</em> → liste les shifts caisse</li>
-  <li>❓ <em>"Qui est là aujourd'hui ?"</em> → présences du jour</li>
-  <li>❓ <em>"Qui n'a pas de repos ?"</em> → détecte les anomalies</li>
-  <li>📊 <em>"Bilan heures"</em> → résumé des heures de l'équipe</li>
-  <li>↩️ <em>"Annule tout"</em> → remet le planning initial</li>
-</ul>
-Parlez naturellement, je m'adapte ! 😊`;
-  }
-
-  // — DÉFAUT INTELLIGENT —
-  // Si on a une personne mais pas d'intention claire, montrer son planning
-  if (personne && !jour) return actionVoirPlanning(personne);
-  if (personne && jour && !intent) return actionVoirPlanning(personne);
-
-  // Dernier recours : analyser si c'est un problème
-  return `Je n'ai pas bien saisi. Pouvez-vous reformuler ?<br><br>
-Exemples : <em>"Kylian absent lundi"</em>, <em>"Qui est en caisse ?"</em>, <em>"Bilan heures"</em><br>
-Tapez <strong>aide</strong> pour voir toutes les commandes. 😊`;
 }
 
 // ——— Send message ——————————————————————————
