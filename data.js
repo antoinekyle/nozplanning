@@ -66,11 +66,12 @@ const STAFF = [
     nom: 'Benoit',
     role: 'AM',
     contrat: 39,
+    pin: '1001',
     shifts: [
       { j: 'Lun', deb: 8,  fin: 16, task: 'Manager' },
       { j: 'Mar', deb: 9,  fin: 17, task: 'Manager' },
       { j: 'Mer', deb: 8,  fin: 16, task: 'Manager' },
-      { j: 'Jeu', deb: 0,  fin: 0,  task: null },      // REPOS
+      { j: 'Jeu', deb: 0,  fin: 0,  task: null },
       { j: 'Ven', deb: 8,  fin: 16, task: 'Manager' },
       { j: 'Sam', deb: 8,  fin: 16, task: 'Manager' },
     ],
@@ -80,6 +81,7 @@ const STAFF = [
     nom: 'Mbappe',
     role: 'EMP',
     contrat: 39,
+    pin: '1002',
     shifts: [
       { j: 'Lun', deb: 6,  fin: 13, task: 'Polyvalent' },
       { j: 'Mar', deb: 6,  fin: 13, task: 'Polyvalent' },
@@ -94,12 +96,13 @@ const STAFF = [
     nom: 'ROnaldo',
     role: 'EMP',
     contrat: 35,
+    pin: '1003',
     shifts: [
       { j: 'Lun', deb: 9,  fin: 16, task: 'Caisse' },
       { j: 'Mar', deb: 10, fin: 17, task: 'Polyvalent' },
       { j: 'Mer', deb: 6,  fin: 13, task: 'Caisse-AM' },
       { j: 'Jeu', deb: 9,  fin: 16, task: 'Caisse' },
-      { j: 'Ven', deb: 0,  fin: 0,  task: null },      // REPOS
+      { j: 'Ven', deb: 0,  fin: 0,  task: null },
       { j: 'Sam', deb: 9,  fin: 16, task: 'Polyvalent' },
     ],
   },
@@ -108,8 +111,9 @@ const STAFF = [
     nom: 'Pessi',
     role: 'EMP',
     contrat: 35,
+    pin: '1004',
     shifts: [
-      { j: 'Lun', deb: 0,  fin: 0,  task: null },      // REPOS
+      { j: 'Lun', deb: 0,  fin: 0,  task: null },
       { j: 'Mar', deb: 9,  fin: 16, task: 'Caisse' },
       { j: 'Mer', deb: 6,  fin: 13, task: 'Polyvalent' },
       { j: 'Jeu', deb: 10, fin: 17, task: 'Polyvalent' },
@@ -122,9 +126,10 @@ const STAFF = [
     nom: 'est entrain de cane',
     role: 'CPRO',
     contrat: 35,
+    pin: '1005',
     shifts: [
       { j: 'Lun', deb: 9,  fin: 16, task: 'MEP' },
-      { j: 'Mar', deb: 0,  fin: 0,  task: null },      // REPOS
+      { j: 'Mar', deb: 0,  fin: 0,  task: null },
       { j: 'Mer', deb: 13, fin: 20, task: 'CPRO PM' },
       { j: 'Jeu', deb: 9,  fin: 16, task: 'TDM' },
       { j: 'Ven', deb: 13, fin: 20, task: 'CPRO PM' },
@@ -136,11 +141,12 @@ const STAFF = [
     nom: 'au frais',
     role: 'CPRO',
     contrat: 35,
+    pin: '1006',
     shifts: [
       { j: 'Lun', deb: 10, fin: 17, task: 'Polyvalent' },
       { j: 'Mar', deb: 11, fin: 18, task: 'MEP' },
       { j: 'Mer', deb: 13, fin: 20, task: 'CPRO PM' },
-      { j: 'Jeu', deb: 0,  fin: 0,  task: null },      // REPOS
+      { j: 'Jeu', deb: 0,  fin: 0,  task: null },
       { j: 'Ven', deb: 13, fin: 20, task: 'CPRO PM' },
       { j: 'Sam', deb: 10, fin: 17, task: 'TDM' },
     ],
@@ -150,12 +156,13 @@ const STAFF = [
     nom: 'Sky',
     role: 'CPRO',
     contrat: 35,
+    pin: '1007',
     shifts: [
       { j: 'Lun', deb: 9,  fin: 16, task: 'TDM' },
       { j: 'Mar', deb: 9,  fin: 16, task: 'TDM' },
       { j: 'Mer', deb: 13, fin: 20, task: 'CPRO PM' },
       { j: 'Jeu', deb: 10, fin: 17, task: 'MEP' },
-      { j: 'Ven', deb: 0,  fin: 0,  task: null },      // REPOS
+      { j: 'Ven', deb: 0,  fin: 0,  task: null },
       { j: 'Sam', deb: 9,  fin: 16, task: 'Polyvalent' },
     ],
   },

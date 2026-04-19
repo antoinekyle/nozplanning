@@ -59,10 +59,10 @@ function buildNav() {
   const nav = document.getElementById('nav');
 
   const tabs = [
-    { id: 'global',     label: 'Planning global', icon: '📅' },
-    { id: 'calendar',   label: 'Calendrier',      icon: '🗓' },
-    { id: 'consignes',  label: 'Consignes',        icon: '📌' },
+    { id: 'global',    label: 'Planning global', icon: '📅' },
+    { id: 'calendar',  label: 'Calendrier',      icon: '🗓' },
     ...STAFF.map((s, i) => ({ id: 'p' + i, label: s.prenom, staff: s })),
+    { id: 'pointage',  label: 'Pointage',         icon: '🕐' },
   ];
 
   tabs.forEach(tab => {
@@ -292,6 +292,26 @@ function buildPersonPage(s, i) {
       <div class="ph-info">
         <div class="ph-name">${s.prenom} ${s.nom}</div>
         <div class="ph-meta">${role.label} · Contrat ${s.contrat}h / semaine · S${SEMAINE.numero}</div>
+        <!-- ONGLET CONSIGNES cliquable sous le nom -->
+        <button
+          id="consigne-toggle-${i}"
+          onclick="toggleConsignesTab(${i})"
+          style="
+            margin-top:8px;
+            display:inline-flex;align-items:center;gap:5px;
+            background:transparent;
+            border:1px solid rgba(255,255,255,0.25);
+            border-radius:20px;
+            padding:3px 10px;
+            font-size:11px;font-weight:600;color:rgba(255,255,255,0.75);
+            cursor:pointer;transition:all 0.15s;
+          "
+          onmouseover="this.style.background='rgba(255,255,255,0.1)'"
+          onmouseout="this.style.background='transparent'"
+        >
+          📌 Consignes
+          <span id="consigne-count-${i}" style="background:var(--noz-red);color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;display:none">0</span>
+        </button>
       </div>
       <div class="ph-stats">
         <div class="ph-stat-num ${ok ? 'ph-stat-ok' : 'ph-stat-warn'}">${total}h</div>
@@ -299,8 +319,8 @@ function buildPersonPage(s, i) {
       </div>
     </div>
 
-    <!-- ONGLET CONSIGNES — visible en haut, juste sous le header -->
-    <div id="consignes-tab-${i}" style="margin-bottom:14px"></div>
+    <!-- PANNEAU CONSIGNES — caché par défaut, s'ouvre au clic -->
+    <div id="consignes-tab-${i}" style="display:none;margin-bottom:14px"></div>
 
     <div class="week-list">${dayCards}</div>
 
@@ -519,68 +539,65 @@ function deleteConsigne(id) {
   updateNavBadges();
 }
 
-function renderConsignesFor(prenom, containerEl, countEl) {
-  const list = getConsignesFor(prenom);
+function toggleConsignesTab(i) {
+  const tab = document.getElementById('consignes-tab-' + i);
+  if (!tab) return;
+  const isOpen = tab.style.display !== 'none';
+  tab.style.display = isOpen ? 'none' : 'block';
+  const btn = document.getElementById('consigne-toggle-' + i);
+  if (btn) btn.style.borderColor = isOpen ? 'rgba(255,255,255,0.25)' : 'rgba(255,165,0,0.7)';
+}
 
-  // Met à jour le badge de comptage dans la nav
+function renderConsignesFor(prenom, _unused, countEl) {
+  const list = getConsignesFor(prenom);
+  const idx  = STAFF.findIndex(s => s.prenom === prenom);
+  const tabEl = idx >= 0 ? document.getElementById('consignes-tab-' + idx) : null;
+  const badge = idx >= 0 ? document.getElementById('consigne-count-' + idx) : null;
+
+  // Badge sur le bouton
+  if (badge) {
+    badge.textContent = list.length;
+    badge.style.display = list.length > 0 ? 'inline-block' : 'none';
+  }
   if (countEl) countEl.textContent = list.length > 0 ? list.length : '';
 
-  // Cherche l'index de la personne pour mettre à jour l'onglet du haut
-  const idx = STAFF.findIndex(s => s.prenom === prenom);
-  const tabEl = idx >= 0 ? document.getElementById('consignes-tab-' + idx) : null;
+  if (!tabEl) return;
 
   if (!list.length) {
-    // Pas de consigne → on cache l'onglet proprement
-    if (tabEl) tabEl.innerHTML = '';
+    tabEl.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--text-muted);font-style:italic">Aucune consigne en cours.</div>';
     return;
   }
 
   const icons = { haute: '🔴', normale: '🟡', info: '🔵' };
-
-  // Rendu dans l'onglet en haut de la fiche
-  if (tabEl) {
-    tabEl.innerHTML = `
-      <div style="
-        background: #fff8f0;
-        border: 1.5px solid #f97316;
-        border-radius: var(--radius-md);
-        overflow: hidden;
-      ">
-        <div style="
-          background: #f97316;
-          padding: 8px 14px;
-          display: flex; align-items: center; gap: 8px;
-        ">
-          <span style="font-size:14px">📌</span>
-          <span style="color:#fff;font-size:12px;font-weight:700;letter-spacing:.3px">
-            CONSIGNES DU GÉRANT
-          </span>
-          <span style="
-            background: rgba(255,255,255,0.3);
-            color: #fff;
-            font-size:10px; font-weight:700;
-            padding: 1px 7px; border-radius: 10px;
-            margin-left: 2px;
-          ">${list.length}</span>
-        </div>
-        <div style="padding: 10px 14px; display:flex; flex-direction:column; gap:8px;">
-          ${list.map(c => `
-            <div style="display:flex;align-items:flex-start;gap:8px">
-              <span style="font-size:13px;flex-shrink:0;margin-top:1px">${icons[c.priority] || '🟡'}</span>
-              <div style="flex:1;min-width:0">
-                <div style="font-size:13px;color:#7c2d12;font-weight:500;line-height:1.4">
-                  ${escHtml(c.text)}
-                </div>
-                <div style="font-size:10px;color:#c2410c;margin-top:2px">
-                  ${c.from} · ${c.date}
-                  ${c.dest === 'Tous' ? '<span style="background:#fed7aa;color:#c2410c;padding:0 5px;border-radius:8px;margin-left:4px;font-size:9px">Toute l\'équipe</span>' : ''}
-                </div>
+  tabEl.innerHTML = `
+    <div style="
+      background:#fff8f0;
+      border:1.5px solid #f97316;
+      border-radius:var(--radius-md);
+      overflow:hidden;
+    ">
+      <div style="background:#f97316;padding:8px 14px;display:flex;align-items:center;justify-content:space-between">
+        <span style="color:#fff;font-size:12px;font-weight:700;letter-spacing:.3px">
+          📌 CONSIGNES DU GÉRANT
+          <span style="background:rgba(255,255,255,0.3);color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:6px">${list.length}</span>
+        </span>
+        <button onclick="toggleConsignesTab(${idx})" style="background:none;border:none;color:rgba(255,255,255,0.8);cursor:pointer;font-size:16px;padding:0;line-height:1">×</button>
+      </div>
+      <div style="padding:10px 14px;display:flex;flex-direction:column;gap:8px">
+        ${list.map(c => `
+          <div style="display:flex;align-items:flex-start;gap:8px">
+            <span style="font-size:13px;flex-shrink:0;margin-top:1px">${icons[c.priority] || '🟡'}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;color:#7c2d12;font-weight:500;line-height:1.4">${escHtml(c.text)}</div>
+              <div style="font-size:10px;color:#c2410c;margin-top:2px">
+                ${c.from} · ${c.date}
+                ${c.dest === 'Tous' ? '<span style="background:#fed7aa;color:#c2410c;padding:0 5px;border-radius:8px;margin-left:4px;font-size:9px">Toute l\'équipe</span>' : ''}
               </div>
             </div>
-          `).join('<hr style="border:none;border-top:1px solid #fed7aa;margin:2px 0">')}
-        </div>
-      </div>`;
-  }
+          </div>
+        `).join('<hr style="border:none;border-top:1px solid #fed7aa;margin:2px 0">')}
+      </div>
+    </div>`;
 }
 
 function refreshAllConsignes() {
@@ -713,6 +730,352 @@ function clearAllConsignes() {
   showToast('Consignes effacées');
 }
 
+/* ——— POINTAGE ENGINE ————————————————————— */
+
+const POINTAGE_KEY = 'noz_pointages';
+
+function getPointages() {
+  try { return JSON.parse(localStorage.getItem(POINTAGE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function savePointages(data) {
+  localStorage.setItem(POINTAGE_KEY, JSON.stringify(data));
+  if (typeof syncSaveOverride === 'function' && window._fbAvailable) {
+    fetch(`${window.FIREBASE_URL}/pointages.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => {});
+  }
+}
+
+function todayKey() {
+  return new Date().toISOString().split('T')[0];
+}
+function nowTime() {
+  return new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+function nowISO() { return new Date().toISOString(); }
+
+// Enregistre une arrivée ou un départ
+function enregistrerPointage(prenom, type) {
+  const data = getPointages();
+  const day  = todayKey();
+  if (!data[day]) data[day] = {};
+  if (!data[day][prenom]) data[day][prenom] = {};
+  data[day][prenom][type] = { time: nowTime(), iso: nowISO() };
+  savePointages(data);
+}
+
+// Retourne le statut du jour pour une personne
+function getStatutJour(prenom) {
+  const data = getPointages();
+  const day  = todayKey();
+  return data[day]?.[prenom] || {};
+}
+
+// Calcule la durée travaillée en minutes
+function dureeMinutes(arrivee, depart) {
+  if (!arrivee || !depart) return null;
+  const [ah, am] = arrivee.split(':').map(Number);
+  const [dh, dm] = depart.split(':').map(Number);
+  return (dh * 60 + dm) - (ah * 60 + am);
+}
+
+// Détecte le retard en minutes
+function retardMinutes(prevuH, realTime) {
+  if (!realTime || !prevuH) return 0;
+  const [ph, pm] = [prevuH * 60, 0];
+  const [rh, rm] = realTime.split(':').map(Number);
+  const diff = (rh * 60 + rm) - (ph + pm);
+  return Math.max(0, diff);
+}
+
+/* ——— PAGE POINTAGE ——————————————————————— */
+
+let pinPointage = '';
+let pointagePersonne = null;
+
+function buildPointagePage() {
+  const pages = document.getElementById('pages');
+  const div = document.createElement('div');
+  div.className = 'page';
+  div.id = 'page-pointage';
+
+  div.innerHTML = `
+    <div style="max-width:480px;margin:0 auto">
+
+      <!-- TITRE -->
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="font-size:22px;font-weight:700;color:var(--text)">🕐 Pointage</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-top:4px" id="pointage-date"></div>
+      </div>
+
+      <!-- PAVÉ PIN -->
+      <div id="pointage-pin-screen">
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;box-shadow:var(--shadow-sm);margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600;color:var(--text-muted);text-align:center;margin-bottom:16px">
+            Entrez votre code PIN
+          </div>
+
+          <!-- Points PIN -->
+          <div style="display:flex;justify-content:center;gap:12px;margin-bottom:20px" id="pt-dots">
+            <div class="pt-dot" id="pt-d0"></div>
+            <div class="pt-dot" id="pt-d1"></div>
+            <div class="pt-dot" id="pt-d2"></div>
+            <div class="pt-dot" id="pt-d3"></div>
+          </div>
+
+          <!-- Pavé numérique -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+            ${[1,2,3,4,5,6,7,8,9,'','0','⌫'].map(n => `
+              <button class="pt-key" ${n==='' ? 'style="visibility:hidden"' : ''} data-v="${n}" onclick="ptKey('${n}')">
+                ${n}
+              </button>`).join('')}
+          </div>
+
+          <div id="pt-error" style="text-align:center;color:#dc2626;font-size:12px;font-weight:600;margin-top:12px;min-height:18px"></div>
+        </div>
+      </div>
+
+      <!-- ÉCRAN POINTAGE APRÈS IDENTIFICATION -->
+      <div id="pointage-action-screen" style="display:none">
+        <div style="background:var(--noz-navy);border-radius:var(--radius-lg);padding:20px;text-align:center;margin-bottom:16px;color:#fff">
+          <div id="pt-avatar" style="width:52px;height:52px;border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;border:2px solid rgba(255,255,255,0.3)"></div>
+          <div id="pt-name" style="font-size:18px;font-weight:700"></div>
+          <div id="pt-role" style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:2px"></div>
+          <div id="pt-shift-prevu" style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:6px"></div>
+        </div>
+
+        <!-- Statut actuel -->
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:10px">Pointages aujourd'hui</div>
+          <div id="pt-status-detail"></div>
+        </div>
+
+        <!-- Boutons pointage -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+          <button id="btn-arrivee" onclick="pointer('arrivee')" style="padding:16px;border:none;border-radius:var(--radius-md);background:#16a34a;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity 0.15s">
+            ✅ Arrivée
+          </button>
+          <button id="btn-depart" onclick="pointer('depart')" style="padding:16px;border:none;border-radius:var(--radius-md);background:#dc2626;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity 0.15s">
+            🚪 Départ
+          </button>
+        </div>
+
+        <button onclick="ptReset()" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--radius-md);background:none;color:var(--text-muted);cursor:pointer;font-size:13px">
+          ← Changer d'employé
+        </button>
+      </div>
+
+      <!-- RÉCAP DU JOUR -->
+      <div style="margin-top:20px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:8px">
+          Présences du jour
+        </div>
+        <div id="pointage-recap-jour" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden"></div>
+      </div>
+
+    </div>
+  `;
+
+  pages.appendChild(div);
+
+  // Styles PIN
+  if (!document.getElementById('pt-styles')) {
+    const style = document.createElement('style');
+    style.id = 'pt-styles';
+    style.textContent = `
+      .pt-dot { width:14px;height:14px;border-radius:50%;border:2px solid var(--border-md);transition:all 0.15s; }
+      .pt-dot.filled { background:var(--noz-navy);border-color:var(--noz-navy); }
+      .pt-dot.ok { background:#16a34a;border-color:#16a34a; }
+      .pt-dot.err { background:#dc2626;border-color:#dc2626;animation:ptShake 0.3s ease; }
+      @keyframes ptShake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+      .pt-key {
+        padding:14px 0;font-size:20px;font-weight:600;
+        border:1px solid var(--border);border-radius:var(--radius-md);
+        background:var(--bg-card);color:var(--text);cursor:pointer;
+        transition:all 0.1s;
+      }
+      .pt-key:hover { background:var(--bg-muted); }
+      .pt-key:active { transform:scale(0.93);background:var(--noz-navy);color:#fff;border-color:var(--noz-navy); }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Init date
+  document.getElementById('pointage-date').textContent =
+    new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+
+  renderRecapJour();
+}
+
+function ptKey(v) {
+  if (v === '⌫') {
+    pinPointage = pinPointage.slice(0, -1);
+  } else if (pinPointage.length < 4) {
+    pinPointage += v;
+  }
+  updatePtDots();
+  document.getElementById('pt-error').textContent = '';
+  if (pinPointage.length === 4) setTimeout(checkPtPin, 150);
+}
+
+function updatePtDots(state) {
+  for (let i = 0; i < 4; i++) {
+    const d = document.getElementById('pt-d' + i);
+    d.className = 'pt-dot';
+    if (state === 'ok') d.classList.add('ok');
+    else if (state === 'err') d.classList.add('err');
+    else if (i < pinPointage.length) d.classList.add('filled');
+  }
+}
+
+function checkPtPin() {
+  const personne = STAFF.find(s => s.pin === pinPointage);
+  if (personne) {
+    updatePtDots('ok');
+    setTimeout(() => showPointageAction(personne), 400);
+  } else {
+    updatePtDots('err');
+    document.getElementById('pt-error').textContent = 'Code incorrect';
+    setTimeout(() => {
+      pinPointage = '';
+      updatePtDots();
+    }, 800);
+  }
+}
+
+function showPointageAction(personne) {
+  pointagePersonne = personne;
+  document.getElementById('pointage-pin-screen').style.display = 'none';
+  document.getElementById('pointage-action-screen').style.display = 'block';
+
+  const rc = roleColor(personne.role);
+  const av = document.getElementById('pt-avatar');
+  av.textContent = initiales(personne);
+  av.style.background = rc;
+
+  document.getElementById('pt-name').textContent = personne.prenom + ' ' + personne.nom;
+  document.getElementById('pt-role').textContent = (ROLES[personne.role]?.label || personne.role) + ' · ' + personne.contrat + 'h/sem';
+
+  // Shift prévu aujourd'hui
+  const jourIdx = (new Date().getDay() + 6) % 7;
+  const sh = personne.shifts[jourIdx];
+  const prevuEl = document.getElementById('pt-shift-prevu');
+  if (sh?.deb) {
+    prevuEl.textContent = `Prévu aujourd'hui : ${sh.deb}h00 → ${sh.fin}h00`;
+  } else {
+    prevuEl.textContent = 'Jour de repos';
+  }
+
+  renderPointageStatus(personne);
+}
+
+function renderPointageStatus(personne) {
+  const statut = getStatutJour(personne.prenom);
+  const el = document.getElementById('pt-status-detail');
+  const jourIdx = (new Date().getDay() + 6) % 7;
+  const sh = personne.shifts[jourIdx];
+
+  let html = '';
+  if (statut.arrivee) {
+    const retard = sh?.deb ? retardMinutes(sh.deb, statut.arrivee.time) : 0;
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:16px">✅</span>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--text)">Arrivée : ${statut.arrivee.time}</div>
+        ${retard > 0 ? `<div style="font-size:11px;color:#dc2626">⚠️ ${retard} min de retard</div>` : '<div style="font-size:11px;color:#16a34a">À l\'heure ✓</div>'}
+      </div>
+    </div>`;
+  } else {
+    html += `<div style="padding:6px 0;color:var(--text-muted);font-size:13px;border-bottom:1px solid var(--border)">⏳ Pas encore pointé l'arrivée</div>`;
+  }
+
+  if (statut.depart) {
+    const duree = dureeMinutes(statut.arrivee?.time, statut.depart.time);
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0">
+      <span style="font-size:16px">🚪</span>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--text)">Départ : ${statut.depart.time}</div>
+        ${duree !== null ? `<div style="font-size:11px;color:var(--text-muted)">${Math.floor(duree/60)}h${String(duree%60).padStart(2,'0')} travaillées</div>` : ''}
+      </div>
+    </div>`;
+  } else {
+    html += `<div style="padding:6px 0;color:var(--text-muted);font-size:13px">⏳ Départ non pointé</div>`;
+  }
+
+  el.innerHTML = html;
+
+  // Activer/désactiver boutons
+  const btnA = document.getElementById('btn-arrivee');
+  const btnD = document.getElementById('btn-depart');
+  if (statut.arrivee) { btnA.style.opacity = '0.4'; btnA.style.cursor = 'not-allowed'; }
+  else { btnA.style.opacity = '1'; btnA.style.cursor = 'pointer'; }
+  if (!statut.arrivee || statut.depart) { btnD.style.opacity = '0.4'; btnD.style.cursor = 'not-allowed'; }
+  else { btnD.style.opacity = '1'; btnD.style.cursor = 'pointer'; }
+}
+
+function pointer(type) {
+  if (!pointagePersonne) return;
+  const statut = getStatutJour(pointagePersonne.prenom);
+  if (type === 'arrivee' && statut.arrivee) return;
+  if (type === 'depart' && (!statut.arrivee || statut.depart)) return;
+
+  enregistrerPointage(pointagePersonne.prenom, type);
+  const label = type === 'arrivee' ? 'Arrivée' : 'Départ';
+  showToast(`${label} enregistrée — ${nowTime()} ✓`);
+  renderPointageStatus(pointagePersonne);
+  renderRecapJour();
+}
+
+function ptReset() {
+  pinPointage = '';
+  pointagePersonne = null;
+  updatePtDots();
+  document.getElementById('pt-error').textContent = '';
+  document.getElementById('pointage-pin-screen').style.display = 'block';
+  document.getElementById('pointage-action-screen').style.display = 'none';
+}
+
+function renderRecapJour() {
+  const el = document.getElementById('pointage-recap-jour');
+  if (!el) return;
+  const data = getPointages();
+  const day  = todayKey();
+  const jourIdx = (new Date().getDay() + 6) % 7;
+
+  const rows = STAFF.map(s => {
+    const sh = s.shifts[jourIdx];
+    if (!sh?.deb) return ''; // repos
+    const pt = data[day]?.[s.prenom] || {};
+    const retard = sh?.deb && pt.arrivee ? retardMinutes(sh.deb, pt.arrivee.time) : 0;
+    const duree = pt.arrivee && pt.depart ? dureeMinutes(pt.arrivee.time, pt.depart.time) : null;
+
+    let statut, couleur;
+    if (pt.depart)       { statut = '✅ Parti';       couleur = '#6b7280'; }
+    else if (pt.arrivee) { statut = '🟢 Présent';     couleur = '#16a34a'; }
+    else                 { statut = '⏳ Attendu';      couleur = '#f59e0b'; }
+
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
+      <span style="width:30px;height:30px;border-radius:50%;background:${roleColor(s.role)};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${initiales(s)}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${s.prenom}</div>
+        <div style="font-size:11px;color:var(--text-muted)">
+          Prévu : ${sh.deb}h–${sh.fin}h
+          ${pt.arrivee ? `· Arrivée : ${pt.arrivee.time}` : ''}
+          ${pt.depart  ? `· Départ : ${pt.depart.time}` : ''}
+          ${duree !== null ? `· <strong>${Math.floor(duree/60)}h${String(duree%60).padStart(2,'0')}</strong>` : ''}
+          ${retard > 0 ? `<span style="color:#dc2626">· ${retard}min retard</span>` : ''}
+        </div>
+      </div>
+      <span style="font-size:11px;font-weight:600;color:${couleur};flex-shrink:0">${statut}</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = rows || '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">Aucun employé prévu aujourd\'hui</div>';
+}
+
 /* ——— INIT ———————————————————————————————— */
 async function init() {
   document.getElementById('week-badge').textContent = `Semaine ${SEMAINE.numero}`;
@@ -720,7 +1083,7 @@ async function init() {
   buildNav();
   buildGlobalPage();
   buildCalendarPage();
-  buildConsignesPage();
+  buildPointagePage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
 
   STAFF.forEach((s, i) => {
