@@ -137,12 +137,6 @@ function buildGlobalPage() {
 
     const cells = JOURS.slice(0, 6).map((j, idx) => {
       const sh = s.shifts[idx];
-      const horsLimite = JOURS_HORS?.[j];
-      if (horsLimite) {
-        return `<td style="padding:5px 4px;text-align:center">
-          <span style="font-size:10px;color:var(--text-light);background:var(--bg-muted);padding:2px 6px;border-radius:8px">Hors mois</span>
-        </td>`;
-      }
       const eff = getEffectiveShift(s.prenom, idx, sh || { j, deb: 0, fin: 0, task: null });
       const isOv = getOverrides().some(o => o.prenom === s.prenom && o.jourIdx === idx);
       if (!eff || !eff.deb) return `<td style="padding:5px 4px"><span class="shift-pill shift-repos">${isOv?'⚡ ':''}</span></td>`;
@@ -212,10 +206,7 @@ function buildGlobalPage() {
               <th>Employé</th>
               <th>Rôle</th>
               <th class="center">Contrat</th>
-              ${JOURS.slice(0,6).map(j => {
-                const hl = JOURS_HORS?.[j];
-                return `<th class="center" ${hl ? 'style="opacity:0.4"' : ''}>${j}<br><span style="font-weight:400;font-size:10px">${JOURS_DATES[j]}${hl ? ' 🚫' : ''}</span></th>`;
-              }).join('')}
+              ${JOURS.slice(0,6).map(j => `<th class="center">${j}<br><span style="font-weight:400;font-size:10px">${JOURS_DATES[j]}</span></th>`).join('')}
               <th class="center">Total</th>
             </tr>
           </thead>
@@ -248,22 +239,17 @@ function buildPersonPage(s, i) {
     const jour = JOURS[idx];
     const jourFull = JOURS_FULL[jour];
     const date = JOURS_DATES[jour];
-    const horsLimite = JOURS_HORS?.[jour]; // jour hors du mois
-
     // Appliquer les overrides admin
-    const eff = horsLimite ? { deb: 0, fin: 0, task: null } : getEffectiveShift(s.prenom, idx, sh);
-    const isOverride = !horsLimite && getOverrides().some(o => o.prenom === s.prenom && o.jourIdx === idx);
+    const eff = getEffectiveShift(s.prenom, idx, sh);
+    const isOverride = getOverrides().some(o => o.prenom === s.prenom && o.jourIdx === idx);
 
     if (!eff.deb) {
-      const label = horsLimite
-        ? `<span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:8px">Hors mois</span>`
-        : `Jour de repos${isOverride ? ' <span style="font-size:10px;background:#fef9c3;color:#92400e;padding:1px 5px;border-radius:8px">modifié</span>' : ''}`;
       return `
-        <div class="day-card repos" ${horsLimite ? 'style="opacity:0.4"' : ''}>
+        <div class="day-card repos">
           <div class="day-card-inner">
             <span class="day-label">${jour}</span>
             <span class="day-date">${jourFull} ${date}</span>
-            <span style="font-size:12px;color:var(--text-light);font-style:italic">${label}</span>
+            <span style="font-size:12px;color:var(--text-light);font-style:italic">Jour de repos${isOverride ? ' <span style="font-size:10px;background:#fef9c3;color:#92400e;padding:1px 5px;border-radius:8px">modifié</span>' : ''}</span>
           </div>
         </div>`;
     }
@@ -766,51 +752,19 @@ function savePointages(data) {
 function todayKey() {
   return new Date().toISOString().split('T')[0];
 }
-
-// Arrondit au quart d'heure selon le type
-// Arrivée → quart d'heure SUPÉRIEUR (8h52 → 9h00, 9h03 → 9h15)
-// Départ  → quart d'heure INFÉRIEUR (16h58 → 16h45, 17h02 → 17h00)
-function arrondiQuart(type) {
-  const now  = new Date();
-  const h    = now.getHours();
-  const m    = now.getMinutes();
-
-  let hArr, mArr;
-  if (type === 'arrivee') {
-    // Quart supérieur : on monte au prochain quart
-    const quarterUp = Math.ceil(m / 15) * 15;
-    if (quarterUp === 60) { hArr = h + 1; mArr = 0; }
-    else { hArr = h; mArr = quarterUp; }
-  } else {
-    // Quart inférieur : on descend au quart précédent
-    const quarterDown = Math.floor(m / 15) * 15;
-    hArr = h; mArr = quarterDown;
-  }
-
-  return `${String(hArr).padStart(2,'0')}:${String(mArr).padStart(2,'0')}`;
-}
-
 function nowTime() {
   return new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 function nowISO() { return new Date().toISOString(); }
 
-// Enregistre une arrivée ou un départ avec arrondi au quart d'heure
+// Enregistre une arrivée ou un départ
 function enregistrerPointage(prenom, type) {
-  const data        = getPointages();
-  const day         = todayKey();
-  const heureReelle = nowTime();
-  const heureArrondie = arrondiQuart(type);
-
+  const data = getPointages();
+  const day  = todayKey();
   if (!data[day]) data[day] = {};
   if (!data[day][prenom]) data[day][prenom] = {};
-  data[day][prenom][type] = {
-    time:    heureArrondie,   // heure arrondie (celle qui compte)
-    timeReel: heureReelle,    // heure réelle (pour info)
-    iso:     nowISO(),
-  };
+  data[day][prenom][type] = { time: nowTime(), iso: nowISO() };
   savePointages(data);
-  return { heureArrondie, heureReelle };
 }
 
 // Retourne le statut du jour pour une personne
@@ -1005,23 +959,14 @@ function showPointageAction(personne) {
   document.getElementById('pt-name').textContent = personne.prenom + ' ' + personne.nom;
   document.getElementById('pt-role').textContent = (ROLES[personne.role]?.label || personne.role) + ' · ' + personne.contrat + 'h/sem';
 
-  // Shift prévu aujourd'hui (dimanche = idx 6, hors planning)
+  // Shift prévu aujourd'hui
   const jourIdx = (new Date().getDay() + 6) % 7;
-  const sh = jourIdx < 6 ? personne.shifts[jourIdx] : null;
+  const sh = personne.shifts[jourIdx];
   const prevuEl = document.getElementById('pt-shift-prevu');
-
-  const btnA = document.getElementById('btn-arrivee');
-  const btnD = document.getElementById('btn-depart');
-
-  if (!sh?.deb) {
-    // Jour de repos ou dimanche → bloquer les boutons
-    prevuEl.innerHTML = '<span style="color:#f97316;font-weight:600">⚠️ Jour de repos — pointage non autorisé</span>';
-    btnA.disabled = true; btnA.style.opacity = '0.3'; btnA.style.cursor = 'not-allowed';
-    btnD.disabled = true; btnD.style.opacity = '0.3'; btnD.style.cursor = 'not-allowed';
+  if (sh?.deb) {
+    prevuEl.textContent = `Prévu aujourd'hui : ${sh.deb}h00 → ${sh.fin}h00`;
   } else {
-    prevuEl.textContent = `Prévu : ${sh.deb}h00 → ${sh.fin}h00`;
-    btnA.disabled = false;
-    btnD.disabled = false;
+    prevuEl.textContent = 'Jour de repos';
   }
 
   renderPointageStatus(personne);
@@ -1031,190 +976,55 @@ function renderPointageStatus(personne) {
   const statut = getStatutJour(personne.prenom);
   const el = document.getElementById('pt-status-detail');
   const jourIdx = (new Date().getDay() + 6) % 7;
-  const sh = jourIdx < 6 ? personne.shifts[jourIdx] : null;
-
-  // Si repos, afficher message et sortir
-  if (!sh?.deb) {
-    el.innerHTML = `<div style="padding:8px 0;color:var(--text-muted);font-size:13px;font-style:italic">Pas de shift prévu aujourd'hui.</div>`;
-    return;
-  }
+  const sh = personne.shifts[jourIdx];
 
   let html = '';
-
-  // — ARRIVÉE —
   if (statut.arrivee) {
-    const retard = retardMinutes(sh.deb, statut.arrivee.time);
-    const realInfo = statut.arrivee.timeReel && statut.arrivee.timeReel !== statut.arrivee.time
-      ? ` <span style="color:var(--text-light);font-size:10px">(réel : ${statut.arrivee.timeReel})</span>` : '';
-    html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:18px">✅</span>
+    const retard = sh?.deb ? retardMinutes(sh.deb, statut.arrivee.time) : 0;
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:16px">✅</span>
       <div>
-        <div style="font-size:13px;font-weight:600;color:var(--text)">Arrivée : ${statut.arrivee.time}${realInfo}</div>
-        ${retard > 0
-          ? `<div style="font-size:11px;color:#dc2626;font-weight:500">⚠️ ${retard} min de retard</div>`
-          : `<div style="font-size:11px;color:#16a34a">À l'heure ✓</div>`}
+        <div style="font-size:13px;font-weight:600;color:var(--text)">Arrivée : ${statut.arrivee.time}</div>
+        ${retard > 0 ? `<div style="font-size:11px;color:#dc2626">⚠️ ${retard} min de retard</div>` : '<div style="font-size:11px;color:#16a34a">À l\'heure ✓</div>'}
       </div>
     </div>`;
   } else {
-    html += `<div style="padding:8px 0;color:var(--text-muted);font-size:13px;border-bottom:1px solid var(--border)">
-      ⏳ Arrivée non pointée
-    </div>`;
+    html += `<div style="padding:6px 0;color:var(--text-muted);font-size:13px;border-bottom:1px solid var(--border)">⏳ Pas encore pointé l'arrivée</div>`;
   }
 
-  // — DÉPART —
   if (statut.depart) {
     const duree = dureeMinutes(statut.arrivee?.time, statut.depart.time);
-    const realInfo = statut.depart.timeReel && statut.depart.timeReel !== statut.depart.time
-      ? ` <span style="color:var(--text-light);font-size:10px">(réel : ${statut.depart.timeReel})</span>` : '';
-    const dureeStr = duree !== null && duree > 0
-      ? `${Math.floor(duree/60)}h${String(duree%60).padStart(2,'0')} travaillées`
-      : '';
-    const supBadge = statut.depart.heureSup
-      ? `<div style="font-size:11px;color:#f97316;font-weight:600;margin-top:2px">⏰ HS · ${statut.depart.justification}</div>` : '';
-    html += `<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0">
-      <span style="font-size:18px;margin-top:1px">🚪</span>
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0">
+      <span style="font-size:16px">🚪</span>
       <div>
-        <div style="font-size:13px;font-weight:600;color:var(--text)">Départ : ${statut.depart.time}${realInfo}</div>
-        ${dureeStr ? `<div style="font-size:11px;color:var(--text-muted)">${dureeStr}</div>` : ''}
-        ${supBadge}
+        <div style="font-size:13px;font-weight:600;color:var(--text)">Départ : ${statut.depart.time}</div>
+        ${duree !== null ? `<div style="font-size:11px;color:var(--text-muted)">${Math.floor(duree/60)}h${String(duree%60).padStart(2,'0')} travaillées</div>` : ''}
       </div>
     </div>`;
   } else {
-    html += `<div style="padding:8px 0;color:var(--text-muted);font-size:13px">⏳ Départ non pointé</div>`;
+    html += `<div style="padding:6px 0;color:var(--text-muted);font-size:13px">⏳ Départ non pointé</div>`;
   }
 
   el.innerHTML = html;
 
-  // — Boutons activer/désactiver —
+  // Activer/désactiver boutons
   const btnA = document.getElementById('btn-arrivee');
   const btnD = document.getElementById('btn-depart');
-
-  // Arrivée : désactivé si déjà pointé
-  if (statut.arrivee) {
-    btnA.disabled = true; btnA.style.opacity = '0.35'; btnA.style.cursor = 'not-allowed';
-  } else {
-    btnA.disabled = false; btnA.style.opacity = '1'; btnA.style.cursor = 'pointer';
-  }
-
-  // Départ : disponible seulement si arrivée pointée ET départ pas encore fait
-  if (statut.arrivee && !statut.depart) {
-    btnD.disabled = false; btnD.style.opacity = '1'; btnD.style.cursor = 'pointer';
-  } else {
-    btnD.disabled = true; btnD.style.opacity = '0.35'; btnD.style.cursor = 'not-allowed';
-  }
-}
-
-// Convertit "HH:MM" en minutes depuis minuit
-function timeToMins(t) {
-  if (!t) return 0;
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
-}
-
-// Modale justification heures sup
-function showJustificationModal(heureArrondie, heureFinPrevue, callback) {
-  const overlay = document.createElement('div');
-  overlay.id = 'justif-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-  const supMins = timeToMins(heureArrondie) - timeToMins(heureFinPrevue);
-  const supStr  = `${Math.floor(supMins/60)}h${String(supMins%60).padStart(2,'0')}`;
-  const raisons = ['Livraison tardive','Inventaire','Caisse longue','Nettoyage','Demande gérant','Forte affluence'];
-  overlay.innerHTML = `
-    <div style="background:var(--bg-card,#fff);border-radius:16px;padding:24px;width:100%;max-width:360px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
-      <div style="text-align:center;margin-bottom:16px">
-        <div style="font-size:28px;margin-bottom:6px">⏰</div>
-        <div style="font-size:15px;font-weight:700;color:var(--text,#111)">Heure supplémentaire</div>
-        <div style="font-size:12px;color:var(--text-muted,#666);margin-top:5px">
-          Fin prévue : <strong>${heureFinPrevue}</strong> → Départ : <strong>${heureArrondie}</strong><br>
-          <span style="color:#dc2626;font-weight:600">+${supStr} supplémentaire(s)</span>
-        </div>
-      </div>
-      <div style="font-size:11px;font-weight:600;color:var(--text-muted,#666);margin-bottom:6px">Raison :</div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
-        ${raisons.map(r => `<button onclick="selectJustif('${r}')" style="padding:4px 9px;border:1px solid #ddd;border-radius:16px;background:none;font-size:11px;color:#666;cursor:pointer" class="jchip">${r}</button>`).join('')}
-      </div>
-      <textarea id="justif-text" placeholder="Ou précisez..." style="width:100%;border:1px solid #ddd;border-radius:8px;padding:8px 12px;font-size:13px;resize:none;min-height:55px;font-family:inherit;outline:none"></textarea>
-      <div style="display:flex;gap:8px;margin-top:12px">
-        <button onclick="cancelJustif()" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;background:none;color:#666;cursor:pointer;font-size:13px">Annuler</button>
-        <button onclick="confirmJustif()" style="flex:2;padding:10px;border:none;border-radius:8px;background:#0D2240;color:#fff;cursor:pointer;font-size:13px;font-weight:600">✅ Valider le départ</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  window._justifCallback = callback;
-}
-
-function selectJustif(raison) {
-  document.getElementById('justif-text').value = raison;
-  document.querySelectorAll('.jchip').forEach(b => {
-    const sel = b.textContent === raison;
-    b.style.background = sel ? '#0D2240' : 'none';
-    b.style.color      = sel ? '#fff' : '#666';
-    b.style.borderColor= sel ? '#0D2240' : '#ddd';
-  });
-}
-
-function confirmJustif() {
-  const text = document.getElementById('justif-text').value.trim();
-  if (!text) { document.getElementById('justif-text').style.borderColor='#dc2626'; setTimeout(()=>document.getElementById('justif-text').style.borderColor='#ddd',1500); return; }
-  document.getElementById('justif-overlay')?.remove();
-  if (window._justifCallback) window._justifCallback(text);
-}
-
-function cancelJustif() {
-  document.getElementById('justif-overlay')?.remove();
-  window._justifCallback = null;
+  if (statut.arrivee) { btnA.style.opacity = '0.4'; btnA.style.cursor = 'not-allowed'; }
+  else { btnA.style.opacity = '1'; btnA.style.cursor = 'pointer'; }
+  if (!statut.arrivee || statut.depart) { btnD.style.opacity = '0.4'; btnD.style.cursor = 'not-allowed'; }
+  else { btnD.style.opacity = '1'; btnD.style.cursor = 'pointer'; }
 }
 
 function pointer(type) {
   if (!pointagePersonne) return;
-
-  // Vérifier que le bouton n'est pas désactivé
-  const btnId = type === 'arrivee' ? 'btn-arrivee' : 'btn-depart';
-  if (document.getElementById(btnId)?.disabled) return;
-
-  // Vérifier jour travaillé
-  const jourIdx = (new Date().getDay() + 6) % 7;
-  const sh = jourIdx < 6 ? pointagePersonne.shifts[jourIdx] : null;
-  if (!sh?.deb) return;
-
   const statut = getStatutJour(pointagePersonne.prenom);
   if (type === 'arrivee' && statut.arrivee) return;
   if (type === 'depart' && (!statut.arrivee || statut.depart)) return;
 
-  const heureArrondie = arrondiQuart(type);
-
-  if (type === 'depart') {
-    const jourIdx = (new Date().getDay() + 6) % 7;
-    const sh = pointagePersonne.shifts[jourIdx];
-    if (sh?.fin) {
-      const finMins  = sh.fin * 60;
-      const deptMins = timeToMins(heureArrondie);
-      if (deptMins > finMins) {
-        const finStr = `${String(sh.fin).padStart(2,'0')}:00`;
-        showJustificationModal(heureArrondie, finStr, (justification) => {
-          const data = getPointages();
-          const day  = todayKey();
-          if (!data[day]) data[day] = {};
-          if (!data[day][pointagePersonne.prenom]) data[day][pointagePersonne.prenom] = {};
-          data[day][pointagePersonne.prenom].depart = {
-            time: heureArrondie, timeReel: nowTime(), iso: nowISO(),
-            heureSup: true, justification,
-          };
-          savePointages(data);
-          const sup = deptMins - finMins;
-          showToast(`Départ ${heureArrondie} · +${Math.floor(sup/60)}h${String(sup%60).padStart(2,'0')} justifiées ✓`);
-          renderPointageStatus(pointagePersonne);
-          renderRecapJour();
-        });
-        return;
-      }
-    }
-  }
-
-  const { heureArrondie: ha, heureReelle } = enregistrerPointage(pointagePersonne.prenom, type);
+  enregistrerPointage(pointagePersonne.prenom, type);
   const label = type === 'arrivee' ? 'Arrivée' : 'Départ';
-  const diffMsg = ha !== heureReelle ? ` (réel : ${heureReelle})` : '';
-  showToast(`${label} : ${ha}${diffMsg} ✓`);
+  showToast(`${label} enregistrée — ${nowTime()} ✓`);
   renderPointageStatus(pointagePersonne);
   renderRecapJour();
 }
