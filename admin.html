@@ -316,6 +316,26 @@
       transition: opacity 0.25s, transform 0.25s; pointer-events: none;
     }
     .toast.show { opacity: 1; transform: translateY(0); }
+
+    /* Filtres absences */
+    .abs-filter-btn {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 20px; padding: 6px 14px;
+      font-size: 12px; color: var(--text-muted); cursor: pointer;
+      transition: all 0.15s; font-family: inherit; font-weight: 500;
+    }
+    .abs-filter-btn.active {
+      background: var(--noz-navy); color: #fff; border-color: var(--noz-navy);
+    }
+    .abs-filter-btn:hover:not(.active) { background: var(--bg-muted); }
+
+    /* Ligne absence admin */
+    .absence-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .absence-row:last-child { border-bottom: none; }
   </style>
 </head>
 <body>
@@ -509,6 +529,35 @@
         </div>
       </div>
 
+    </div>
+
+    <!-- ═══ MODULE ABSENCES / CONGÉS ═══ -->
+    <div style="margin-top:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:700;color:var(--text)">📅 Demandes d'absences & congés</div>
+        <span id="absences-pending-badge" style="font-size:11px;font-weight:700;background:#f59e0b;color:#fff;padding:3px 10px;border-radius:20px;display:none">0 en attente</span>
+      </div>
+
+      <!-- Filtres -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="abs-filter-btn active" data-filter="pending" onclick="filterAbsences('pending',this)">⏳ En attente</button>
+        <button class="abs-filter-btn" data-filter="all"     onclick="filterAbsences('all',this)">📋 Toutes</button>
+        <button class="abs-filter-btn" data-filter="approved" onclick="filterAbsences('approved',this)">✅ Approuvées</button>
+        <button class="abs-filter-btn" data-filter="refused"  onclick="filterAbsences('refused',this)">❌ Refusées</button>
+      </div>
+
+      <!-- Tableau absences -->
+      <div id="admin-absences-list" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm)">
+        <div class="history-empty">Chargement...</div>
+      </div>
+
+      <!-- Cumul mensuel équipe -->
+      <div style="margin-top:16px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:10px">
+          📊 Cumul heures pointées — Équipe (mois en cours)
+        </div>
+        <div id="admin-cumul-mensuel" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px"></div>
+      </div>
     </div>
 
   </main>
@@ -1346,7 +1395,172 @@ async function boot() {
   initAdminConsignesSelect();
   renderAdminConsignes();
   renderHistory();
+  renderAdminAbsences('pending');
+  renderAdminCumulMensuel();
 }
+
+// ——— MODULE ABSENCES ADMIN ———————————————
+
+const ABSENCE_TYPES_ADMIN = {
+  'conges':     { label: 'Congés payés',        icon: '🏖️', color: '#0277BD' },
+  'maladie':    { label: 'Maladie / Arrêt',      icon: '🤒', color: '#dc2626' },
+  'injustifiee':{ label: 'Absence injustifiée',  icon: '❌', color: '#9ca3af' },
+  'formation':  { label: 'Formation',            icon: '📚', color: '#6A1B9A' },
+  'ferie':      { label: 'Jour férié',           icon: '🏛️', color: '#E65100' },
+};
+
+const ABSENCE_STATUS_ADMIN = {
+  'pending':  { label: 'En attente',  color: '#f59e0b', bg: '#fef3c7' },
+  'approved': { label: 'Approuvée',   color: '#16a34a', bg: '#dcfce7' },
+  'refused':  { label: 'Refusée',     color: '#dc2626', bg: '#fee2e2' },
+};
+
+function getAbsencesAdmin() {
+  try { return JSON.parse(localStorage.getItem('noz_absences') || '[]'); }
+  catch { return []; }
+}
+
+let _currentAbsFilter = 'pending';
+
+function filterAbsences(filter, btn) {
+  _currentAbsFilter = filter;
+  document.querySelectorAll('.abs-filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+  renderAdminAbsences(filter);
+}
+
+function renderAdminAbsences(filter) {
+  const container = document.getElementById('admin-absences-list');
+  if (!container) return;
+  let absences = getAbsencesAdmin();
+  if (filter === 'pending')  absences = absences.filter(a => a.status === 'pending');
+  if (filter === 'approved') absences = absences.filter(a => a.status === 'approved');
+  if (filter === 'refused')  absences = absences.filter(a => a.status === 'refused');
+
+  // Badge en attente
+  const pendingCount = getAbsencesAdmin().filter(a => a.status === 'pending').length;
+  const badge = document.getElementById('absences-pending-badge');
+  if (badge) {
+    badge.textContent = `${pendingCount} en attente`;
+    badge.style.display = pendingCount > 0 ? '' : 'none';
+  }
+
+  if (!absences.length) {
+    container.innerHTML = '<div class="history-empty">Aucune demande' + (filter !== 'all' ? ' dans cette catégorie' : '') + '</div>';
+    return;
+  }
+
+  container.innerHTML = absences.sort((a,b) => b.id - a.id).map(a => {
+    const type   = ABSENCE_TYPES_ADMIN[a.type]   || { label: a.type, icon: '📅', color: '#888' };
+    const status = ABSENCE_STATUS_ADMIN[a.status] || ABSENCE_STATUS_ADMIN.pending;
+    const isSingleDay = a.dateDebut === a.dateFin;
+    const dateStr = isSingleDay ? a.dateDebut : `${a.dateDebut} → ${a.dateFin}`;
+    const s = STAFF.find(emp => emp.prenom === a.prenom);
+    const avatarColor = s ? roleColor(s.role) : '#888';
+    const initls = s ? initiales(s) : a.prenom[0].toUpperCase();
+
+    const actionBtns = a.status === 'pending' ? `
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button onclick="validerAbsence(${a.id},'approved')" style="padding:5px 12px;border:none;border-radius:6px;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer">✅ Approuver</button>
+        <button onclick="validerAbsence(${a.id},'refused')" style="padding:5px 12px;border:none;border-radius:6px;background:#dc2626;color:#fff;font-size:11px;font-weight:700;cursor:pointer">❌ Refuser</button>
+      </div>` : `
+      <span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;background:${status.bg};color:${status.color}">${status.label}</span>`;
+
+    return `<div class="absence-row">
+      <div style="width:30px;height:30px;border-radius:50%;background:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${initls}</div>
+      <div style="flex:1;min-width:120px">
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${a.prenom}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${type.icon} ${type.label} · ${dateStr}</div>
+        ${a.motif ? `<div style="font-size:11px;color:var(--text-light);font-style:italic">${escHtml(a.motif)}</div>` : ''}
+        <div style="font-size:10px;color:var(--text-light)">Demandé le ${a.createdAt}</div>
+      </div>
+      ${actionBtns}
+      <button onclick="supprimerAbsenceAdmin(${a.id})" style="background:none;border:none;color:var(--text-light);cursor:pointer;font-size:16px;padding:0;flex-shrink:0;margin-left:4px">×</button>
+    </div>`;
+  }).join('');
+}
+
+async function validerAbsence(id, newStatus) {
+  const comment = newStatus === 'refused' ? (prompt('Motif du refus (optionnel) :') || '') : '';
+  if (typeof syncUpdateAbsenceStatus === 'function') {
+    await syncUpdateAbsenceStatus(id, newStatus, comment);
+  } else {
+    const list = getAbsencesAdmin();
+    const a = list.find(ab => ab.id === id);
+    if (a) { a.status = newStatus; a.adminComment = comment; a.validatedAt = new Date().toLocaleString('fr-FR'); }
+    localStorage.setItem('noz_absences', JSON.stringify(list));
+  }
+  renderAdminAbsences(_currentAbsFilter);
+  showToast(newStatus === 'approved' ? 'Absence approuvée ✅' : 'Absence refusée ❌');
+}
+
+async function supprimerAbsenceAdmin(id) {
+  if (!confirm('Supprimer cette demande ?')) return;
+  if (typeof syncDeleteAbsence === 'function') {
+    await syncDeleteAbsence(id);
+  } else {
+    const list = getAbsencesAdmin().filter(a => a.id !== id);
+    localStorage.setItem('noz_absences', JSON.stringify(list));
+  }
+  renderAdminAbsences(_currentAbsFilter);
+}
+
+// ——— CUMUL MENSUEL ADMIN ——————————————————
+
+function dureeMinutesAdmin(arrivee, depart) {
+  if (!arrivee || !depart) return null;
+  const [ah, am] = arrivee.split(':').map(Number);
+  const [dh, dm] = depart.split(':').map(Number);
+  return (dh * 60 + dm) - (ah * 60 + am);
+}
+
+function formatHMAdmin(totalMinutes) {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return m > 0 ? `${h}h${String(m).padStart(2,'0')}` : `${h}h00`;
+}
+
+function renderAdminCumulMensuel() {
+  const container = document.getElementById('admin-cumul-mensuel');
+  if (!container) return;
+  const data = JSON.parse(localStorage.getItem('noz_pointages') || '{}');
+  const now  = new Date();
+  const annee = now.getFullYear();
+  const mois  = now.getMonth() + 1;
+  const moisNom = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'][now.getMonth()];
+  const daysInMonth = new Date(annee, mois, 0).getDate();
+
+  container.innerHTML = STAFF.map(s => {
+    let totalMinutes = 0;
+    let joursPointes = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = `${annee}-${String(mois).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const pt  = data[key]?.[s.prenom];
+      if (pt?.arrivee && pt?.depart) {
+        const mins = dureeMinutesAdmin(pt.arrivee.time, pt.depart.time);
+        if (mins > 0) { totalMinutes += mins; joursPointes++; }
+      }
+    }
+    const heuresContratMois = Math.round(s.contrat * 4.33);
+    const pct = Math.min(100, Math.round(totalMinutes / (heuresContratMois * 60) * 100));
+    const couleur = pct >= 90 ? '#16a34a' : pct >= 60 ? '#f59e0b' : '#dc2626';
+    const rc = roleColor(s.role);
+
+    return `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="width:26px;height:26px;border-radius:50%;background:${rc};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">${initiales(s)}</div>
+        <div style="font-size:12px;font-weight:700;color:var(--text)">${s.prenom}</div>
+      </div>
+      <div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">${formatHMAdmin(totalMinutes)}</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">${joursPointes}j pointés · ~${heuresContratMois}h contrat</div>
+      <div style="background:var(--bg-muted);border-radius:3px;height:4px;overflow:hidden">
+        <div style="height:100%;background:${couleur};width:${pct}%;border-radius:3px"></div>
+      </div>
+      <div style="font-size:10px;font-weight:600;color:${couleur};margin-top:3px">${pct}%</div>
+    </div>`;
+  }).join('');
+}
+
+// ——— INIT ————————————————————————————————
 
 if (sessionStorage.getItem('noz_admin_auth') === '1') {
   document.getElementById('lock-screen').classList.add('hidden');

@@ -267,3 +267,69 @@ async function initFirebase() {
   showSyncStatus(ok);
   return ok;
 }
+
+// =============================================
+//  API PUBLIQUE — ABSENCES / CONGÉS
+// =============================================
+
+async function syncGetAbsences() {
+  if (_fbAvailable) {
+    const data = await fbGet('absences');
+    const list = data ? Object.values(data) : [];
+    localStorage.setItem('noz_absences', JSON.stringify(list));
+    return list;
+  }
+  try { return JSON.parse(localStorage.getItem('noz_absences') || '[]'); }
+  catch { return []; }
+}
+
+async function syncSaveAbsence(absence) {
+  const key = absence.id;
+  if (_fbAvailable) {
+    await fbSet(`absences/${key}`, absence);
+  }
+  const local = JSON.parse(localStorage.getItem('noz_absences') || '[]');
+  const updated = local.filter(a => a.id !== absence.id);
+  updated.push(absence);
+  localStorage.setItem('noz_absences', JSON.stringify(updated));
+}
+
+async function syncUpdateAbsenceStatus(id, status, comment) {
+  const local = JSON.parse(localStorage.getItem('noz_absences') || '[]');
+  const absence = local.find(a => a.id === id);
+  if (!absence) return;
+  absence.status = status;
+  absence.adminComment = comment || '';
+  absence.validatedAt = new Date().toLocaleString('fr-FR');
+  if (_fbAvailable) {
+    await fbSet(`absences/${id}`, absence);
+  }
+  const updated = local.filter(a => a.id !== id);
+  updated.push(absence);
+  localStorage.setItem('noz_absences', JSON.stringify(updated));
+  return absence;
+}
+
+async function syncDeleteAbsence(id) {
+  if (_fbAvailable) {
+    await fetch(`${FIREBASE_URL}/absences/${id}.json`, { method: 'DELETE' });
+  }
+  const local = JSON.parse(localStorage.getItem('noz_absences') || '[]');
+  localStorage.setItem('noz_absences', JSON.stringify(local.filter(a => a.id !== id)));
+}
+
+// =============================================
+//  API PUBLIQUE — POINTAGES MENSUEL
+// =============================================
+
+async function syncGetPointages() {
+  if (_fbAvailable) {
+    const data = await fbGet('pointages');
+    if (data) {
+      localStorage.setItem('noz_pointages', JSON.stringify(data));
+      return data;
+    }
+  }
+  try { return JSON.parse(localStorage.getItem('noz_pointages') || '{}'); }
+  catch { return {}; }
+}
