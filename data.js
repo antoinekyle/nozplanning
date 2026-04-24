@@ -44,7 +44,7 @@ const JOURS_DATES = {
 // pause_deb / pause_fin : idem (null = pas de pause)
 const STAFF = [
   {
-    prenom:'Abdel', nom:'', role:'Gérant', contrat:39, pin:'1001',
+    prenom:'Abdel',  totalSemaine:null, nom:'', role:'Gérant', contrat:39, pin:'1001',
     shifts:[
       { j:'Lun', deb:8.75, fin:13.75, task:'Pole1',  pause_deb:null,  pause_fin:null  },
       { j:'Mar', deb:8.75, fin:13.75, task:'Pole1',  pause_deb:null,  pause_fin:null  },
@@ -55,7 +55,7 @@ const STAFF = [
     ],
   },
   {
-    prenom:'Yohan', nom:'', role:'AEM', contrat:35, pin:'1002',
+    prenom:'Yohan',  totalSemaine:31.75, nom:'', role:'AEM', contrat:35, pin:'1002',
     shifts:[
       { j:'Lun', deb:10,   fin:19.5,  task:'Divers', pause_deb:14,    pause_fin:15    },
       { j:'Mar', deb:8.75, fin:14.5,  task:'Divers', pause_deb:null,  pause_fin:null  },
@@ -66,7 +66,7 @@ const STAFF = [
     ],
   },
   {
-    prenom:'Anthony', nom:'', role:'AM', contrat:35, pin:'1003',
+    prenom:'Anthony',totalSemaine:26.25, nom:'', role:'AM', contrat:35, pin:'1003',
     shifts:[
       { j:'Lun', deb:11,   fin:19.5,  task:'TDM',    pause_deb:14,    pause_fin:15    },
       { j:'Mar', deb:0,    fin:0,     task:null,     pause_deb:null,  pause_fin:null  },
@@ -77,7 +77,7 @@ const STAFF = [
     ],
   },
   {
-    prenom:'Virginie', nom:'', role:'EMP', contrat:35, pin:'1004',
+    prenom:'Virginie',totalSemaine:35.00, nom:'', role:'EMP', contrat:35, pin:'1004',
     shifts:[
       { j:'Lun', deb:0,    fin:0,     task:null,      pause_deb:null,  pause_fin:null  },
       { j:'Mar', deb:13.75,fin:19.5,  task:'TDM',     pause_deb:null,  pause_fin:null  },
@@ -88,7 +88,7 @@ const STAFF = [
     ],
   },
   {
-    prenom:'Yanis', nom:'', role:'EMP', contrat:35, pin:'1005',
+    prenom:'Yanis',  totalSemaine:40.00, nom:'', role:'EMP', contrat:35, pin:'1005',
     shifts:[
       { j:'Lun', deb:13.75,fin:19.5,  task:'Pole1',   pause_deb:null,  pause_fin:null  },
       { j:'Mar', deb:8.75, fin:14.5,  task:'Caisses', pause_deb:null,  pause_fin:null  },
@@ -99,7 +99,7 @@ const STAFF = [
     ],
   },
   {
-    prenom:'Mylene', nom:'', role:'EMP', contrat:35, pin:'1006',
+    prenom:'Mylene', totalSemaine:27.50, nom:'', role:'EMP', contrat:35, pin:'1006',
     shifts:[
       { j:'Lun', deb:13.75,fin:19.5,  task:'Caisses', pause_deb:null,  pause_fin:null  },
       { j:'Mar', deb:0,    fin:0,     task:null,      pause_deb:null,  pause_fin:null  },
@@ -110,7 +110,7 @@ const STAFF = [
     ],
   },
   {
-    prenom:'Zao', nom:'', role:'Contrat Pro', contrat:35, pin:'1007',
+    prenom:'Zao',    totalSemaine:41.00, nom:'', role:'Contrat Pro', contrat:35, pin:'1007',
     shifts:[
       { j:'Lun', deb:13.75,fin:19.5,  task:'Caisses', pause_deb:null,  pause_fin:null  },
       { j:'Mar', deb:10.75,fin:19.5,  task:'Caisses', pause_deb:12.75, pause_fin:13.75 },
@@ -121,7 +121,7 @@ const STAFF = [
     ],
   },
   {
-    prenom:'Oceane', nom:'', role:'Contrat Pro', contrat:35, pin:'1008',
+    prenom:'Oceane', totalSemaine:0, nom:'', role:'Contrat Pro', contrat:35, pin:'1008',
     shifts:[
       { j:'Lun', deb:0, fin:0, task:null, pause_deb:null, pause_fin:null },
       { j:'Mar', deb:0, fin:0, task:null, pause_deb:null, pause_fin:null },
@@ -132,7 +132,7 @@ const STAFF = [
     ],
   },
   {
-    prenom:'Antoine', nom:'', role:'AEM', contrat:39, pin:'1009',
+    prenom:'Antoine',totalSemaine:39.00, nom:'', role:'AEM', contrat:39, pin:'1009',
     shifts:[
       { j:'Lun', deb:10,   fin:17.25, task:'Divers',  pause_deb:14,    pause_fin:15    },
       { j:'Mar', deb:9,    fin:19,    task:'Divers',  pause_deb:14,    pause_fin:15    },
@@ -143,7 +143,7 @@ const STAFF = [
     ],
   },
   {
-    prenom:'Mady', nom:'', role:'Expert métier', contrat:39, pin:'1010',
+    prenom:'Mady',   totalSemaine:39.00, nom:'', role:'Expert métier', contrat:39, pin:'1010',
     shifts:[
       { j:'Lun', deb:10,   fin:17.25, task:'Divers',  pause_deb:14,    pause_fin:15    },
       { j:'Mar', deb:9,    fin:19,    task:'Divers',  pause_deb:14,    pause_fin:15    },
@@ -154,7 +154,7 @@ const STAFF = [
     ],
   },
   {
-    prenom:'Willy', nom:'', role:'AEMI', contrat:39, pin:'1011',
+    prenom:'Willy',  totalSemaine:39.00, nom:'', role:'AEMI', contrat:39, pin:'1011',
     shifts:[
       { j:'Lun', deb:10,   fin:17.25, task:'Divers',  pause_deb:14,    pause_fin:15    },
       { j:'Mar', deb:9,    fin:19,    task:'Divers',  pause_deb:14,    pause_fin:15    },
@@ -165,7 +165,7 @@ const STAFF = [
     ],
   },
   {
-    prenom:'Vanessa', nom:'', role:'EMP', contrat:39, pin:'1012',
+    prenom:'Vanessa',totalSemaine:31.25, nom:'', role:'EMP', contrat:39, pin:'1012',
     shifts:[
       { j:'Lun', deb:8.75, fin:14.5,  task:'Pole2',   pause_deb:null,  pause_fin:null  },
       { j:'Mar', deb:13.75,fin:19.5,  task:'Pole2',   pause_deb:null,  pause_fin:null  },
@@ -179,6 +179,10 @@ const STAFF = [
 
 // ——— Helpers ——————————————————————————————
 function totalHeures(staff) {
+  // Utilise le total officiel du planning Excel si disponible
+  if (staff.totalSemaine !== null && staff.totalSemaine !== undefined) {
+    return staff.totalSemaine;
+  }
   return staff.shifts.reduce((sum, s) => {
     if (!s.deb) return sum;
     const brut = s.fin - s.deb;
