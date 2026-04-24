@@ -3,10 +3,7 @@
 //  app.js — logique principale
 // =============================================
 
-/* ——— FORMATAGE HEURES DÉCIMALES ——————————
-   8.75 → "8h45"  |  13.5 → "13h30"  |  19.25 → "19h15"
-   Règle : décimal × 60 = minutes  (.25=15, .50=30, .75=45)
-—————————————————————————————————————————— */
+// Formate décimal → heure : 8.75→"8h45", 13.5→"13h30"
 function fmtHeure(v) {
   if (!v && v !== 0) return '';
   const h = Math.floor(v);
@@ -159,8 +156,8 @@ function buildGlobalPage() {
       if (!eff || !eff.deb) return `<td style="padding:5px 4px"><span class="shift-pill shift-repos">${isOv?'⚡ ':''}</span></td>`;
       const t = TASKS[eff.task] || { color: '#888', label: eff.task };
       return `<td style="padding:5px 4px">
-        <span class="shift-pill" style="background:${t.color};${isOv?'outline:2px solid #fbbf24;outline-offset:1px':''}" title="${eff.task} — ${fmtHeure(eff.deb)} à ${fmtHeure(eff.fin)}${isOv?' (modifié)':''}">
-          ${fmtHeure(eff.deb)}–${fmtHeure(eff.fin)}
+        <span class="shift-pill" style="background:${t.color};${isOv?'outline:2px solid #fbbf24;outline-offset:1px':''}" title="${eff.task} — ${eff.deb}h à ${eff.fin}h${isOv?' (modifié)':''}">
+          ${eff.deb}h–${eff.fin}h
         </span>
       </td>`;
     }).join('');
@@ -180,7 +177,7 @@ function buildGlobalPage() {
       <td style="text-align:center;font-size:11px;color:var(--text-muted)">${s.contrat}h</td>
       ${cells}
       <td style="text-align:center;padding:5px 10px">
-        <span class="${ok ? 'h-ok' : 'h-warn'}">${total}h</span>
+        <span class="${ok ? 'h-ok' : 'h-warn'}">${fmtDuree(total)}</span>
       </td>
     </tr>`;
   }).join('');
@@ -272,49 +269,32 @@ function buildPersonPage(s, i) {
     }
 
     const t = TASKS[eff.task] || { color: '#888', label: eff.task || '' };
+    const dur = eff.fin - eff.deb;
 
-    // Durées avec pauses correctement calculées
-    const pauseDur = (eff.pause_deb && eff.pause_fin) ? (eff.pause_fin - eff.pause_deb) : 0;
-    const durBrut  = eff.fin - eff.deb;
-    const durNet   = durBrut - pauseDur;
+    const leftPct  = ((eff.deb - TL_START) / TL_SPAN * 100).toFixed(1);
+    const widthPct = (dur / TL_SPAN * 100).toFixed(1);
 
-    // Timeline
     const ticks = [];
-    for (let h = TL_START; h <= TL_END; h += 3) ticks.push(`<span>${h}h</span>`);
-
-    let tlContent = '';
-    if (eff.pause_deb && eff.pause_fin) {
-      const l1 = ((eff.deb       - TL_START) / TL_SPAN * 100).toFixed(1);
-      const w1 = ((eff.pause_deb - eff.deb)  / TL_SPAN * 100).toFixed(1);
-      const lP = ((eff.pause_deb - TL_START) / TL_SPAN * 100).toFixed(1);
-      const wP = ((eff.pause_fin - eff.pause_deb) / TL_SPAN * 100).toFixed(1);
-      const l2 = ((eff.pause_fin - TL_START) / TL_SPAN * 100).toFixed(1);
-      const w2 = ((eff.fin       - eff.pause_fin) / TL_SPAN * 100).toFixed(1);
-      tlContent = `
-        <div class="tl-fill" style="left:${l1}%;width:${w1}%;background:${t.color}">${fmtHeure(eff.deb)}</div>
-        <div class="tl-fill" style="left:${lP}%;width:${wP}%;background:repeating-linear-gradient(45deg,#cbd5e1,#cbd5e1 3px,#e2e8f0 3px,#e2e8f0 8px);color:#64748b;font-size:9px">☕</div>
-        <div class="tl-fill" style="left:${l2}%;width:${w2}%;background:${t.color}">${fmtHeure(eff.fin)}</div>`;
-    } else {
-      const leftPct  = ((eff.deb - TL_START) / TL_SPAN * 100).toFixed(1);
-      const widthPct = (durBrut  / TL_SPAN * 100).toFixed(1);
-      tlContent = `<div class="tl-fill" style="left:${leftPct}%;width:${widthPct}%;background:${t.color}">${fmtHeure(eff.deb)}–${fmtHeure(eff.fin)}</div>`;
+    for (let h = TL_START; h <= TL_END; h += 3) {
+      ticks.push(`<span>${h}h</span>`);
     }
-
-    const modifBadge  = isOverride ? `<span style="font-size:9px;background:#fef9c3;color:#92400e;padding:1px 5px;border-radius:8px;margin-left:6px">modifié</span>` : '';
-    const pauseBadge  = eff.pause_deb ? `<div style="padding:2px 14px 6px;font-size:11px;color:var(--text-muted)">☕ Pause ${fmtHeure(eff.pause_deb)} → ${fmtHeure(eff.pause_fin)} · Net : ${fmtDuree(durNet)}</div>` : '';
+    const modifBadge = isOverride ? `<span style="font-size:9px;background:#fef9c3;color:#92400e;padding:1px 5px;border-radius:8px;margin-left:6px">modifié</span>` : '';
 
     return `
       <div class="day-card">
         <div class="day-card-inner">
           <span class="day-label">${jour}</span>
           <span class="day-date">${jourFull} ${date}</span>
-          <span class="day-task-badge" style="background:${t.color};font-size:13px;font-weight:700;padding:4px 12px;border-radius:8px">${t.label}</span>
-          <span class="day-hours-range" style="margin-left:8px;font-size:13px;font-weight:600;color:var(--text)">${fmtHeure(eff.deb)} → ${fmtHeure(eff.fin)}${modifBadge}</span>
-          <span class="day-dur">${fmtDuree(durBrut)}</span>
+          <span class="day-task-badge" style="background:${t.color}">${t.label}</span>
+          <span class="day-hours-range" style="margin-left:8px">${eff.deb}h00 → ${eff.fin}h00${modifBadge}</span>
+          <span class="day-dur">${dur}h</span>
         </div>
-        ${pauseBadge}
         <div class="tl-wrap">
-          <div class="tl-track">${tlContent}</div>
+          <div class="tl-track">
+            <div class="tl-fill" style="left:${leftPct}%;width:${widthPct}%;background:${t.color}">
+              ${eff.deb}h–${eff.fin}h
+            </div>
+          </div>
           <div class="tl-ticks">${ticks.join('')}</div>
         </div>
       </div>`;
@@ -348,7 +328,7 @@ function buildPersonPage(s, i) {
         </button>
       </div>
       <div class="ph-stats">
-        <div class="ph-stat-num ${ok ? 'ph-stat-ok' : 'ph-stat-warn'}">${total}h</div>
+        <div class="ph-stat-num ${ok ? 'ph-stat-ok' : 'ph-stat-warn'}">${fmtDuree(total)}</div>
         <div class="ph-stat-label">planifiées / ${s.contrat}h</div>
       </div>
     </div>
@@ -361,7 +341,7 @@ function buildPersonPage(s, i) {
     <div style="margin-top:12px;padding:10px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:space-between;font-size:12px;">
       <span style="color:var(--text-muted)">Heures planifiées cette semaine</span>
       <span style="font-weight:700;color:${ok?'#16a34a':'#ea580c'}">
-        ${total}h / ${s.contrat}h · Écart : ${total >= s.contrat ? '+' : ''}${total - s.contrat}h
+        ${fmtDuree(total)} / ${s.contrat}h · Écart : ${total >= s.contrat ? '+' : ''}${fmtDuree(Math.abs(total - s.contrat))}
       </span>
     </div>
   `;
@@ -470,7 +450,7 @@ function initCalendar() {
         if (!iso) return;
         if (!eventsMap[iso]) eventsMap[iso] = [];
         const t = TASKS[sh.task] || { color: rc, label: sh.task };
-        eventsMap[iso].push({ prenom: s.prenom, color: t.color, task: t.label, deb: sh.deb, fin: sh.fin, debFmt: fmtHeure(sh.deb), finFmt: fmtHeure(sh.fin) });
+        eventsMap[iso].push({ prenom: s.prenom, color: t.color, task: t.label, deb: sh.deb, fin: sh.fin });
       });
     });
 
@@ -998,7 +978,7 @@ function showPointageAction(personne) {
   const sh = personne.shifts[jourIdx];
   const prevuEl = document.getElementById('pt-shift-prevu');
   if (sh?.deb) {
-    prevuEl.textContent = `Prévu aujourd'hui : ${fmtHeure(sh.deb)} → ${fmtHeure(sh.fin)}`;
+    prevuEl.textContent = `Prévu aujourd'hui : ${sh.deb}h00 → ${sh.fin}h00`;
   } else {
     prevuEl.textContent = 'Jour de repos';
   }
@@ -1096,7 +1076,7 @@ function renderRecapJour() {
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;color:var(--text)">${s.prenom}</div>
         <div style="font-size:11px;color:var(--text-muted)">
-          Prévu : ${fmtHeure(sh.deb)}–${fmtHeure(sh.fin)}
+          Prévu : ${sh.deb}h–${sh.fin}h
           ${pt.arrivee ? `· Arrivée : ${pt.arrivee.time}` : ''}
           ${pt.depart  ? `· Départ : ${pt.depart.time}` : ''}
           ${duree !== null ? `· <strong>${Math.floor(duree/60)}h${String(duree%60).padStart(2,'0')}</strong>` : ''}
