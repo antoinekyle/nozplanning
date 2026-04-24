@@ -1,7 +1,7 @@
 // =============================================
 //  NOZ P854 — Données planning
 //  Semaine 19 — 4 au 10 mai 2026
-//  Mis à jour depuis PLANNING_MAGASIN_Vierge__4_.xlsx
+//  Horaires exacts + pauses extraits du planning Excel
 // =============================================
 
 const SEMAINE = {
@@ -40,148 +40,162 @@ const JOURS_DATES = {
   'Jeu':'7 mai','Ven':'8 mai','Sam':'9 mai','Dim':'10 mai',
 };
 
+// deb/fin en décimal : 8.75 = 8h45, 13.75 = 13h45, 19.5 = 19h30
+// pause_deb / pause_fin : idem (null = pas de pause)
 const STAFF = [
   {
     prenom:'Abdel', nom:'', role:'Gérant', contrat:39, pin:'1001',
     shifts:[
-      { j:'Lun', deb:9,  fin:14, task:'Pole1'  },
-      { j:'Mar', deb:9,  fin:14, task:'Pole1'  },
-      { j:'Mer', deb:7,  fin:14, task:'Pole1'  },
-      { j:'Jeu', deb:0,  fin:0,  task:null     },
-      { j:'Ven', deb:7,  fin:14, task:'Pole1'  },
-      { j:'Sam', deb:0,  fin:0,  task:null     },
+      { j:'Lun', deb:8.75, fin:13.75, task:'Pole1',  pause_deb:null,  pause_fin:null  },
+      { j:'Mar', deb:8.75, fin:13.75, task:'Pole1',  pause_deb:null,  pause_fin:null  },
+      { j:'Mer', deb:7,    fin:13.75, task:'Pole1',  pause_deb:null,  pause_fin:null  },
+      { j:'Jeu', deb:0,    fin:0,     task:null,     pause_deb:null,  pause_fin:null  },
+      { j:'Ven', deb:7,    fin:13.75, task:'Pole1',  pause_deb:null,  pause_fin:null  },
+      { j:'Sam', deb:0,    fin:0,     task:null,     pause_deb:null,  pause_fin:null  },
     ],
   },
   {
     prenom:'Yohan', nom:'', role:'AEM', contrat:35, pin:'1002',
     shifts:[
-      { j:'Lun', deb:10, fin:20, task:'Divers' },
-      { j:'Mar', deb:9,  fin:14, task:'Divers' },
-      { j:'Mer', deb:7,  fin:15, task:'Divers' },
-      { j:'Jeu', deb:9,  fin:20, task:'Divers' },
-      { j:'Ven', deb:0,  fin:0,  task:null     },
-      { j:'Sam', deb:0,  fin:0,  task:null     },
+      { j:'Lun', deb:10,   fin:19.5,  task:'Divers', pause_deb:14,    pause_fin:15    },
+      { j:'Mar', deb:8.75, fin:14.5,  task:'Divers', pause_deb:null,  pause_fin:null  },
+      { j:'Mer', deb:7,    fin:14.75, task:'Divers', pause_deb:12,    pause_fin:13    },
+      { j:'Jeu', deb:8.75, fin:19.5,  task:'Divers', pause_deb:14,    pause_fin:15    },
+      { j:'Ven', deb:0,    fin:0,     task:null,     pause_deb:null,  pause_fin:null  },
+      { j:'Sam', deb:0,    fin:0,     task:null,     pause_deb:null,  pause_fin:null  },
     ],
   },
   {
     prenom:'Anthony', nom:'', role:'AM', contrat:35, pin:'1003',
     shifts:[
-      { j:'Lun', deb:11, fin:20, task:'TDM'    },
-      { j:'Mar', deb:0,  fin:0,  task:null     },
-      { j:'Mer', deb:7,  fin:15, task:'TDM'    },
-      { j:'Jeu', deb:9,  fin:14, task:'TDM'    },
-      { j:'Ven', deb:0,  fin:0,  task:null     },
-      { j:'Sam', deb:9,  fin:14, task:'TDM'    },
+      { j:'Lun', deb:11,   fin:19.5,  task:'TDM',    pause_deb:14,    pause_fin:15    },
+      { j:'Mar', deb:0,    fin:0,     task:null,     pause_deb:null,  pause_fin:null  },
+      { j:'Mer', deb:7,    fin:14.75, task:'TDM',    pause_deb:12,    pause_fin:13    },
+      { j:'Jeu', deb:8.75, fin:14.5,  task:'TDM',    pause_deb:null,  pause_fin:null  },
+      { j:'Ven', deb:0,    fin:0,     task:null,     pause_deb:null,  pause_fin:null  },
+      { j:'Sam', deb:8.75, fin:14,    task:'TDM',    pause_deb:null,  pause_fin:null  },
     ],
   },
   {
     prenom:'Virginie', nom:'', role:'EMP', contrat:35, pin:'1004',
     shifts:[
-      { j:'Lun', deb:0,  fin:0,  task:null     },
-      { j:'Mar', deb:14, fin:20, task:'TDM'    },
-      { j:'Mer', deb:9,  fin:20, task:'Pole2'  },
-      { j:'Jeu', deb:14, fin:20, task:'TDM'    },
-      { j:'Ven', deb:10, fin:18, task:'Pole3'  },
-      { j:'Sam', deb:14, fin:20, task:'Caisses'},
+      { j:'Lun', deb:0,    fin:0,     task:null,      pause_deb:null,  pause_fin:null  },
+      { j:'Mar', deb:13.75,fin:19.5,  task:'TDM',     pause_deb:null,  pause_fin:null  },
+      { j:'Mer', deb:8.75, fin:19.5,  task:'Pole2',   pause_deb:13,    pause_fin:14    },
+      { j:'Jeu', deb:13.75,fin:19.5,  task:'TDM',     pause_deb:null,  pause_fin:null  },
+      { j:'Ven', deb:10,   fin:17.75, task:'Pole3',   pause_deb:13,    pause_fin:14    },
+      { j:'Sam', deb:13.75,fin:19.5,  task:'Caisses', pause_deb:null,  pause_fin:null  },
     ],
   },
   {
     prenom:'Yanis', nom:'', role:'EMP', contrat:35, pin:'1005',
     shifts:[
-      { j:'Lun', deb:14, fin:20, task:'Pole1'  },
-      { j:'Mar', deb:9,  fin:14, task:'Caisses'},
-      { j:'Mer', deb:14, fin:20, task:'Pole1'  },
-      { j:'Jeu', deb:10, fin:20, task:'Pole1'  },
-      { j:'Ven', deb:10, fin:18, task:'Pole1'  },
-      { j:'Sam', deb:14, fin:20, task:'Pole1'  },
+      { j:'Lun', deb:13.75,fin:19.5,  task:'Pole1',   pause_deb:null,  pause_fin:null  },
+      { j:'Mar', deb:8.75, fin:14.5,  task:'Caisses', pause_deb:null,  pause_fin:null  },
+      { j:'Mer', deb:13.75,fin:19.5,  task:'Pole1',   pause_deb:null,  pause_fin:null  },
+      { j:'Jeu', deb:10,   fin:19.5,  task:'Pole1',   pause_deb:14,    pause_fin:15    },
+      { j:'Ven', deb:9.75, fin:17.75, task:'Pole1',   pause_deb:14,    pause_fin:15    },
+      { j:'Sam', deb:13.75,fin:19.5,  task:'Pole1',   pause_deb:null,  pause_fin:null  },
     ],
   },
   {
     prenom:'Mylene', nom:'', role:'EMP', contrat:35, pin:'1006',
     shifts:[
-      { j:'Lun', deb:14, fin:20, task:'Caisses'},
-      { j:'Mar', deb:0,  fin:0,  task:null     },
-      { j:'Mer', deb:14, fin:20, task:'Caisses'},
-      { j:'Jeu', deb:9,  fin:14, task:'Caisses'},
-      { j:'Ven', deb:13, fin:18, task:'Caisses'},
-      { j:'Sam', deb:10, fin:14, task:'Caisses'},
+      { j:'Lun', deb:13.75,fin:19.5,  task:'Caisses', pause_deb:null,  pause_fin:null  },
+      { j:'Mar', deb:0,    fin:0,     task:null,      pause_deb:null,  pause_fin:null  },
+      { j:'Mer', deb:13.75,fin:19.5,  task:'Caisses', pause_deb:null,  pause_fin:null  },
+      { j:'Jeu', deb:8.75, fin:14.5,  task:'Caisses', pause_deb:null,  pause_fin:null  },
+      { j:'Ven', deb:13,   fin:17.75, task:'Caisses', pause_deb:null,  pause_fin:null  },
+      { j:'Sam', deb:9.75, fin:14,    task:'Caisses', pause_deb:null,  pause_fin:null  },
     ],
   },
   {
     prenom:'Zao', nom:'', role:'Contrat Pro', contrat:35, pin:'1007',
     shifts:[
-      { j:'Lun', deb:14, fin:20, task:'Caisses'},
-      { j:'Mar', deb:11, fin:20, task:'Caisses'},
-      { j:'Mer', deb:13, fin:20, task:'TDM'    },
-      { j:'Jeu', deb:14, fin:20, task:'Caisses'},
-      { j:'Ven', deb:10, fin:18, task:'Divers' },
-      { j:'Sam', deb:10, fin:20, task:'TDM'    },
+      { j:'Lun', deb:13.75,fin:19.5,  task:'Caisses', pause_deb:null,  pause_fin:null  },
+      { j:'Mar', deb:10.75,fin:19.5,  task:'Caisses', pause_deb:12.75, pause_fin:13.75 },
+      { j:'Mer', deb:13.25,fin:19.5,  task:'TDM',     pause_deb:14,    pause_fin:15    },
+      { j:'Jeu', deb:13.75,fin:19.5,  task:'Caisses', pause_deb:null,  pause_fin:null  },
+      { j:'Ven', deb:9.75, fin:17.75, task:'Divers',  pause_deb:14,    pause_fin:15    },
+      { j:'Sam', deb:10.5, fin:19.5,  task:'TDM',     pause_deb:12.75, pause_fin:13.75 },
     ],
   },
   {
     prenom:'Oceane', nom:'', role:'Contrat Pro', contrat:35, pin:'1008',
     shifts:[
-      { j:'Lun', deb:0, fin:0, task:null },
-      { j:'Mar', deb:0, fin:0, task:null },
-      { j:'Mer', deb:0, fin:0, task:null },
-      { j:'Jeu', deb:0, fin:0, task:null },
-      { j:'Ven', deb:0, fin:0, task:null },
-      { j:'Sam', deb:0, fin:0, task:null },
+      { j:'Lun', deb:0, fin:0, task:null, pause_deb:null, pause_fin:null },
+      { j:'Mar', deb:0, fin:0, task:null, pause_deb:null, pause_fin:null },
+      { j:'Mer', deb:0, fin:0, task:null, pause_deb:null, pause_fin:null },
+      { j:'Jeu', deb:0, fin:0, task:null, pause_deb:null, pause_fin:null },
+      { j:'Ven', deb:0, fin:0, task:null, pause_deb:null, pause_fin:null },
+      { j:'Sam', deb:0, fin:0, task:null, pause_deb:null, pause_fin:null },
     ],
   },
   {
     prenom:'Antoine', nom:'', role:'AEM', contrat:39, pin:'1009',
     shifts:[
-      { j:'Lun', deb:10, fin:17, task:'Divers' },
-      { j:'Mar', deb:9,  fin:19, task:'Divers' },
-      { j:'Mer', deb:7,  fin:18, task:'Divers' },
-      { j:'Jeu', deb:9,  fin:17, task:'Divers' },
-      { j:'Ven', deb:7,  fin:14, task:'Divers' },
-      { j:'Sam', deb:0,  fin:0,  task:null     },
+      { j:'Lun', deb:10,   fin:17.25, task:'Divers',  pause_deb:14,    pause_fin:15    },
+      { j:'Mar', deb:9,    fin:19,    task:'Divers',  pause_deb:14,    pause_fin:15    },
+      { j:'Mer', deb:7,    fin:17.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Jeu', deb:8.75, fin:16.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Ven', deb:7,    fin:13.75, task:'Divers',  pause_deb:11,    pause_fin:12    },
+      { j:'Sam', deb:0,    fin:0,     task:null,      pause_deb:null,  pause_fin:null  },
     ],
   },
   {
     prenom:'Mady', nom:'', role:'Expert métier', contrat:39, pin:'1010',
     shifts:[
-      { j:'Lun', deb:10, fin:17, task:'Divers' },
-      { j:'Mar', deb:9,  fin:19, task:'Divers' },
-      { j:'Mer', deb:7,  fin:18, task:'Divers' },
-      { j:'Jeu', deb:9,  fin:17, task:'Divers' },
-      { j:'Ven', deb:7,  fin:14, task:'Divers' },
-      { j:'Sam', deb:0,  fin:0,  task:null     },
+      { j:'Lun', deb:10,   fin:17.25, task:'Divers',  pause_deb:14,    pause_fin:15    },
+      { j:'Mar', deb:9,    fin:19,    task:'Divers',  pause_deb:14,    pause_fin:15    },
+      { j:'Mer', deb:7,    fin:17.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Jeu', deb:8.75, fin:16.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Ven', deb:7,    fin:13.75, task:'Divers',  pause_deb:11,    pause_fin:12    },
+      { j:'Sam', deb:0,    fin:0,     task:null,      pause_deb:null,  pause_fin:null  },
     ],
   },
   {
     prenom:'Willy', nom:'', role:'AEMI', contrat:39, pin:'1011',
     shifts:[
-      { j:'Lun', deb:10, fin:17, task:'Divers' },
-      { j:'Mar', deb:9,  fin:19, task:'Divers' },
-      { j:'Mer', deb:7,  fin:18, task:'Divers' },
-      { j:'Jeu', deb:9,  fin:17, task:'Divers' },
-      { j:'Ven', deb:7,  fin:14, task:'Divers' },
-      { j:'Sam', deb:0,  fin:0,  task:null     },
+      { j:'Lun', deb:10,   fin:17.25, task:'Divers',  pause_deb:14,    pause_fin:15    },
+      { j:'Mar', deb:9,    fin:19,    task:'Divers',  pause_deb:14,    pause_fin:15    },
+      { j:'Mer', deb:7,    fin:17.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Jeu', deb:8.75, fin:16.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Ven', deb:7,    fin:13.75, task:'Divers',  pause_deb:11,    pause_fin:12    },
+      { j:'Sam', deb:0,    fin:0,     task:null,      pause_deb:null,  pause_fin:null  },
     ],
   },
   {
     prenom:'Vanessa', nom:'', role:'EMP', contrat:39, pin:'1012',
     shifts:[
-      { j:'Lun', deb:9,  fin:14, task:'Pole2'  },
-      { j:'Mar', deb:14, fin:20, task:'Pole2'  },
-      { j:'Mer', deb:0,  fin:0,  task:null     },
-      { j:'Jeu', deb:14, fin:20, task:'Pole2'  },
-      { j:'Ven', deb:10, fin:18, task:'Pole2'  },
-      { j:'Sam', deb:14, fin:20, task:'Pole2'  },
+      { j:'Lun', deb:8.75, fin:14.5,  task:'Pole2',   pause_deb:null,  pause_fin:null  },
+      { j:'Mar', deb:13.75,fin:19.5,  task:'Pole2',   pause_deb:null,  pause_fin:null  },
+      { j:'Mer', deb:0,    fin:0,     task:null,      pause_deb:null,  pause_fin:null  },
+      { j:'Jeu', deb:13.75,fin:19.5,  task:'Pole2',   pause_deb:null,  pause_fin:null  },
+      { j:'Ven', deb:9.75, fin:17.75, task:'Pole2',   pause_deb:14,    pause_fin:15    },
+      { j:'Sam', deb:13.75,fin:19.5,  task:'Pole2',   pause_deb:null,  pause_fin:null  },
     ],
   },
 ];
 
 // ——— Helpers ——————————————————————————————
 function totalHeures(staff) {
-  return staff.shifts.reduce((sum, s) => sum + (s.deb ? s.fin - s.deb : 0), 0);
+  return staff.shifts.reduce((sum, s) => {
+    if (!s.deb) return sum;
+    const brut = s.fin - s.deb;
+    const pause = (s.pause_deb && s.pause_fin) ? (s.pause_fin - s.pause_deb) : 0;
+    return sum + (brut - pause);
+  }, 0);
 }
 function initiales(p) {
   return (p.prenom[0] + (p.nom ? p.nom[0] || '' : '')).toUpperCase();
 }
 function roleColor(role) {
   return (ROLES[role] || {}).color || '#888';
+}
+// Convertit décimal → "8h45"
+function fmtH(v) {
+  if (!v && v !== 0) return '';
+  const h = Math.floor(v);
+  const m = Math.round((v - h) * 60);
+  return m > 0 ? `${h}h${String(m).padStart(2,'0')}` : `${h}h00`;
 }

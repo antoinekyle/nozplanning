@@ -139,11 +139,13 @@ function buildGlobalPage() {
       const sh = s.shifts[idx];
       const eff = getEffectiveShift(s.prenom, idx, sh || { j, deb: 0, fin: 0, task: null });
       const isOv = getOverrides().some(o => o.prenom === s.prenom && o.jourIdx === idx);
+      const fH = v => { if(!v&&v!==0)return''; const h=Math.floor(v); const m=Math.round((v-h)*60); return m>0?`${h}h${String(m).padStart(2,'0')}`:`${h}h00`; };
       if (!eff || !eff.deb) return `<td style="padding:5px 4px"><span class="shift-pill shift-repos">${isOv?'⚡ ':''}</span></td>`;
       const t = TASKS[eff.task] || { color: '#888', label: eff.task };
+      const pauseInfo = eff.pause_deb ? ` | Pause ${fH(eff.pause_deb)}→${fH(eff.pause_fin)}` : '';
       return `<td style="padding:5px 4px">
-        <span class="shift-pill" style="background:${t.color};${isOv?'outline:2px solid #fbbf24;outline-offset:1px':''}" title="${eff.task} — ${eff.deb}h à ${eff.fin}h${isOv?' (modifié)':''}">
-          ${eff.deb}h–${eff.fin}h
+        <span class="shift-pill" style="background:${t.color};${isOv?'outline:2px solid #fbbf24;outline-offset:1px':''}" title="${eff.task} — ${fH(eff.deb)} à ${fH(eff.fin)}${pauseInfo}${isOv?' (modifié)':''}">
+          ${fH(eff.deb)}–${fH(eff.fin)}
         </span>
       </td>`;
     }).join('');
@@ -255,32 +257,56 @@ function buildPersonPage(s, i) {
     }
 
     const t = TASKS[eff.task] || { color: '#888', label: eff.task || '' };
-    const dur = eff.fin - eff.deb;
 
-    const leftPct  = ((eff.deb - TL_START) / TL_SPAN * 100).toFixed(1);
-    const widthPct = (dur / TL_SPAN * 100).toFixed(1);
+    // Heures nettes (sans pause)
+    const pauseDur = (eff.pause_deb && eff.pause_fin) ? (eff.pause_fin - eff.pause_deb) : 0;
+    const durBrut  = eff.fin - eff.deb;
+    const durNet   = durBrut - pauseDur;
 
+    // Formatage décimal → "8h45"
+    const fH = v => { if(!v && v!==0) return ''; const h=Math.floor(v); const m=Math.round((v-h)*60); return m>0?`${h}h${String(m).padStart(2,'0')}`:`${h}h00`; };
+    const fDur = v => { const h=Math.floor(v); const m=Math.round((v-h)*60); return m>0?`${h}h${String(m).padStart(2,'0')}`:`${h}h`; };
+
+    // Timeline : segments avant pause + pause (gris) + après pause
     const ticks = [];
-    for (let h = TL_START; h <= TL_END; h += 3) {
-      ticks.push(`<span>${h}h</span>`);
+    for (let h = TL_START; h <= TL_END; h += 3) ticks.push(`<span>${h}h</span>`);
+
+    let tlContent = '';
+    if (eff.pause_deb && eff.pause_fin) {
+      // Segment 1 : deb → pause_deb
+      const l1 = ((eff.deb - TL_START) / TL_SPAN * 100).toFixed(1);
+      const w1 = ((eff.pause_deb - eff.deb) / TL_SPAN * 100).toFixed(1);
+      // Segment pause (gris hachuré)
+      const lP = ((eff.pause_deb - TL_START) / TL_SPAN * 100).toFixed(1);
+      const wP = ((eff.pause_fin - eff.pause_deb) / TL_SPAN * 100).toFixed(1);
+      // Segment 2 : pause_fin → fin
+      const l2 = ((eff.pause_fin - TL_START) / TL_SPAN * 100).toFixed(1);
+      const w2 = ((eff.fin - eff.pause_fin) / TL_SPAN * 100).toFixed(1);
+      tlContent = `
+        <div class="tl-fill" style="left:${l1}%;width:${w1}%;background:${t.color}">${fH(eff.deb)}</div>
+        <div class="tl-fill" style="left:${lP}%;width:${wP}%;background:repeating-linear-gradient(45deg,#cbd5e1,#cbd5e1 3px,#e2e8f0 3px,#e2e8f0 8px);color:#64748b;font-size:9px">☕</div>
+        <div class="tl-fill" style="left:${l2}%;width:${w2}%;background:${t.color}">${fH(eff.fin)}</div>`;
+    } else {
+      const leftPct = ((eff.deb - TL_START) / TL_SPAN * 100).toFixed(1);
+      const widthPct = (durBrut / TL_SPAN * 100).toFixed(1);
+      tlContent = `<div class="tl-fill" style="left:${leftPct}%;width:${widthPct}%;background:${t.color}">${fH(eff.deb)}–${fH(eff.fin)}</div>`;
     }
+
     const modifBadge = isOverride ? `<span style="font-size:9px;background:#fef9c3;color:#92400e;padding:1px 5px;border-radius:8px;margin-left:6px">modifié</span>` : '';
+    const pauseBadge = eff.pause_deb ? `<span style="font-size:11px;color:var(--text-muted);margin-left:8px">☕ Pause ${fH(eff.pause_deb)}→${fH(eff.pause_fin)}</span>` : '';
 
     return `
       <div class="day-card">
         <div class="day-card-inner">
           <span class="day-label">${jour}</span>
           <span class="day-date">${jourFull} ${date}</span>
-          <span class="day-task-badge" style="background:${t.color};font-size:13px;font-weight:700;padding:4px 12px;border-radius:8px;letter-spacing:.3px">${t.label}</span>
-          <span class="day-hours-range" style="margin-left:8px;font-size:13px;font-weight:600;color:var(--text)">${eff.deb}h00 → ${eff.fin}h00${modifBadge}</span>
-          <span class="day-dur">${dur}h</span>
+          <span class="day-task-badge" style="background:${t.color};font-size:13px;font-weight:700;padding:4px 12px;border-radius:8px">${t.label}</span>
+          <span class="day-hours-range" style="margin-left:8px;font-size:13px;font-weight:600;color:var(--text)">${fH(eff.deb)} → ${fH(eff.fin)}${modifBadge}</span>
+          <span class="day-dur">${fDur(durNet)} nettes</span>
         </div>
+        ${pauseBadge ? `<div style="padding:2px 14px 6px;">${pauseBadge}</div>` : ''}
         <div class="tl-wrap">
-          <div class="tl-track">
-            <div class="tl-fill" style="left:${leftPct}%;width:${widthPct}%;background:${t.color}">
-              ${eff.deb}h–${eff.fin}h
-            </div>
-          </div>
+          <div class="tl-track">${tlContent}</div>
           <div class="tl-ticks">${ticks.join('')}</div>
         </div>
       </div>`;
