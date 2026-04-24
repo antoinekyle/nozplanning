@@ -3,18 +3,18 @@
 //  app.js — logique principale
 // =============================================
 
-// Formate décimal → heure : 8.75→"8h45", 13.5→"13h30"
+// Formate décimal → heure : 8.75→"8h75", 13.5→"13h50", 23.5→"23h50"
 function fmtHeure(v) {
   if (!v && v !== 0) return '';
   const h = Math.floor(v);
-  const m = Math.round((v - h) * 60);
-  return m > 0 ? h + 'h' + String(m).padStart(2, '0') : h + 'h00';
+  const d = Math.round((v - h) * 100);
+  return d > 0 ? h + 'h' + String(d).padStart(2, '0') : h + 'h00';
 }
 function fmtDuree(v) {
   if (!v && v !== 0) return '';
   const h = Math.floor(v);
-  const m = Math.round((v - h) * 60);
-  return m > 0 ? h + 'h' + String(m).padStart(2, '0') : h + 'h';
+  const d = Math.round((v - h) * 100);
+  return d > 0 ? h + 'h' + String(d).padStart(2, '0') : h + 'h';
 }
 
 /* ——— PLANNING OVERRIDES (Firebase sync) ——— */
