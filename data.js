@@ -200,6 +200,7 @@ function roleColor(role) {
 function fmtH(v) {
   if (!v && v !== 0) return '';
   const h = Math.floor(v);
-  const d = Math.round((v - h) * 100);
-  return d > 0 ? `${h}h${String(d).padStart(2,'0')}` : `${h}h00`;
+  const m = Math.round((v - h) * 60);
+  return m > 0 ? `${h}h${String(m).padStart(2,'0')}` : `${h}h00`;
+}h${String(d).padStart(2,'0')}` : `${h}h00`;
 }

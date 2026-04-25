@@ -1,11 +1,12 @@
-// ——— FORMATAGE HEURES DÉCIMALES ———————————
-// 8.75→"8h75" | 19.5→"19h50" | 13.25→"13h25"
+// ——— FORMATAGE HEURES ———————————————————
+// fmtH : horaires lisibles   8.75 → "8h45"  |  13.5 → "13h30"
 function fmtH(v) {
   if (!v && v !== 0) return '';
   const h = Math.floor(v);
-  const d = Math.round((v - h) * 100);
-  return d > 0 ? h + 'h' + String(d).padStart(2, '0') : h + 'h00';
+  const m = Math.round((v - h) * 60);
+  return m > 0 ? h + 'h' + String(m).padStart(2, '0') : h + 'h00';
 }
+// fmtD : totaux/durées décimaux  31.75 → "31h75"  |  23.5 → "23h50"
 function fmtD(v) {
   if (!v && v !== 0) return '';
   const h = Math.floor(v);
@@ -279,7 +280,7 @@ function buildPersonPage(s, i) {
     }
     const modifBadge = isOverride ? `<span style="font-size:9px;background:#fef9c3;color:#92400e;padding:1px 5px;border-radius:8px;margin-left:6px">modifié</span>` : '';
 
-    // Timeline avec coupure pause si applicable
+    // Timeline avec coupure pause
     let tlContent = '';
     if (eff.pause_deb && eff.pause_fin) {
       const l1 = ((eff.deb       - TL_START) / TL_SPAN * 100).toFixed(1);
@@ -287,7 +288,7 @@ function buildPersonPage(s, i) {
       const lP = ((eff.pause_deb - TL_START) / TL_SPAN * 100).toFixed(1);
       const wP = ((eff.pause_fin - eff.pause_deb) / TL_SPAN * 100).toFixed(1);
       const l2 = ((eff.pause_fin - TL_START) / TL_SPAN * 100).toFixed(1);
-      const w2 = ((eff.fin       - eff.pause_fin) / TL_SPAN * 100).toFixed(1);
+      const w2 = ((eff.fin - eff.pause_fin)  / TL_SPAN * 100).toFixed(1);
       tlContent = `<div class="tl-fill" style="left:${l1}%;width:${w1}%;background:${t.color}">${fmtH(eff.deb)}</div><div class="tl-fill" style="left:${lP}%;width:${wP}%;background:repeating-linear-gradient(45deg,#cbd5e1,#cbd5e1 3px,#e2e8f0 3px,#e2e8f0 8px);color:#64748b;font-size:9px">☕</div><div class="tl-fill" style="left:${l2}%;width:${w2}%;background:${t.color}">${fmtH(eff.fin)}</div>`;
     } else {
       const leftPct  = ((eff.deb - TL_START) / TL_SPAN * 100).toFixed(1);
