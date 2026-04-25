@@ -50,7 +50,7 @@ const STAFF = [
       { j:'Mar', deb:8.75, fin:13.75, task:'Pole1',  pause_deb:null,  pause_fin:null  },
       { j:'Mer', deb:7,    fin:13.75, task:'Pole1',  pause_deb:null,  pause_fin:null  },
       { j:'Jeu', deb:0,    fin:0,     task:null,     pause_deb:null,  pause_fin:null  },
-      { j:'Ven', deb:7,    fin:13.75, task:'Pole1',   pause_deb:null, pause_fin:null  },
+      { j:'Ven', deb:0,    fin:0,     task:null,      pause_deb:null, pause_fin:null  },
       { j:'Sam', deb:0,    fin:0,     task:null,     pause_deb:null,  pause_fin:null  },
     ],
   },
