@@ -470,29 +470,12 @@
         </div>
         <div class="rules-card" style="padding:0;overflow:hidden">
 
-          <!-- Liste des semaines -->
-          <div id="week-list-admin" style="max-height:260px;overflow-y:auto"></div>
+          <!-- Onglets semaines -->
+          <div id="week-tabs" style="display:flex;overflow-x:auto;border-bottom:1px solid var(--border);background:var(--bg-muted);scrollbar-width:none"></div>
 
-          <!-- Ajouter une semaine -->
-          <div style="padding:10px 12px;border-top:1px solid var(--border);background:var(--bg-muted)">
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Coller le lien de la nouvelle semaine :</div>
-            <div style="display:flex;gap:8px">
-              <input
-                id="sheet-url-input"
-                type="url"
-                placeholder="https://docs.google.com/spreadsheets/..."
-                style="flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font-size:12px;background:var(--bg-card);color:var(--text);outline:none;min-width:0"
-                onfocus="this.style.borderColor='var(--noz-navy)'"
-                onblur="this.style.borderColor='var(--border)'"
-                onkeydown="if(event.key==='Enter')addWeekFromURL()"
-              />
-              <button
-                onclick="addWeekFromURL()"
-                style="padding:7px 14px;border:none;border-radius:var(--radius-sm);background:var(--noz-navy);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0"
-              >Ajouter</button>
-            </div>
-            <div id="sheet-status" style="font-size:10px;color:var(--text-muted);margin-top:4px;min-height:14px"></div>
-          </div>
+          <!-- Contenu onglet actif -->
+          <div id="week-tab-content" style="padding:14px 12px"></div>
+
         </div>
       </div>
 
@@ -1378,61 +1361,193 @@ function genererRecapPDF() {
   setTimeout(() => w.print(), 500);
 }
 
-// ——— GESTION SEMAINES ————————————————————
+// ——— GESTION SEMAINES (onglets) ————————————————
 
 const MOIS_FR = ['jan','fév','mar','avr','mai','juin','juil','aoû','sep','oct','nov','déc'];
 
+let _activeTab = null; // numéro d'onglet affiché
+
 function weekStatus(data) {
   const today = new Date(); today.setHours(12,0,0,0);
-  if (!data.debut || !data.fin) return { label: 'Enregistrée', color: '#6b7280', order: 2 };
+  if (!data.debut || !data.fin) return { label: 'Enregistrée', color: '#6b7280' };
   const debut = new Date(data.debut + 'T00:00:00');
   const fin   = new Date(data.fin   + 'T23:59:59');
-  if (today < debut)  return { label: 'À venir',  color: '#3b82f6', order: 1 };
-  if (today <= fin)   return { label: 'En cours', color: '#16a34a', order: 0 };
+  if (today < debut)  return { label: 'À venir',  color: '#3b82f6' };
+  if (today <= fin)   return { label: 'En cours', color: '#16a34a' };
   const daysSince = (today - fin) / 86400000;
-  if (daysSince < 21) return { label: 'Terminée', color: '#f59e0b', order: 3 };
-  return { label: 'Archivée', color: '#9ca3af', order: 4 };
+  if (daysSince < 21) return { label: 'Terminée', color: '#f59e0b' };
+  return { label: 'Archivée', color: '#9ca3af' };
 }
 
 function renderWeekListAdmin() {
-  const container = document.getElementById('week-list-admin');
-  if (!container) return;
+  const tabs    = document.getElementById('week-tabs');
+  const content = document.getElementById('week-tab-content');
+  if (!tabs || !content) return;
 
-  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
-  const nums  = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
+  const weeks  = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
+  const active = typeof getActiveWeekNum === 'function' ? getActiveWeekNum() : null;
+  const nums   = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
 
-  if (!nums.length) {
-    container.innerHTML = '<div style="padding:14px 12px;font-size:12px;color:var(--text-muted);font-style:italic">Aucune semaine enregistrée.</div>';
+  // Si aucun onglet sélectionné, prendre le dernier
+  if (!_activeTab || !weeks[_activeTab]) {
+    _activeTab = nums[nums.length - 1] || null;
+  }
+
+  // ── Onglets ───────────────────────────────────────
+  tabs.innerHTML = nums.map(num => {
+    const data   = typeof weeks[num] === 'string' ? { url: weeks[num] } : weeks[num];
+    const status = weekStatus(data);
+    const isSel  = num === _activeTab;
+    const isCur  = num === active;
+    return `<button onclick="selectWeekTab('${num}')" style="
+      padding:9px 15px;border:none;border-bottom:${isSel ? '2px solid var(--noz-navy)' : '2px solid transparent'};
+      background:${isSel ? 'var(--bg-card)' : 'transparent'};
+      color:${isSel ? 'var(--noz-navy)' : 'var(--text-light)'};
+      font-size:12px;font-weight:${isSel ? '700' : '500'};cursor:pointer;white-space:nowrap;
+      display:flex;align-items:center;gap:5px;flex-shrink:0">
+      S${num}
+      ${isCur ? '<span style="width:6px;height:6px;border-radius:50%;background:#16a34a;display:inline-block"></span>' : ''}
+    </button>`;
+  }).join('') + `<button onclick="addNewWeekTab()" style="
+    padding:9px 14px;border:none;border-bottom:2px solid transparent;
+    background:transparent;color:var(--text-light);font-size:16px;cursor:pointer;flex-shrink:0"
+    title="Ajouter une semaine">+</button>`;
+
+  // ── Contenu onglet actif ───────────────────────────
+  if (!_activeTab || !weeks[_activeTab]) {
+    content.innerHTML = `<div style="text-align:center;padding:20px;font-size:12px;color:var(--text-muted)">
+      Cliquez sur <strong>+</strong> pour ajouter une semaine.
+    </div>`;
     return;
   }
 
-  const active = typeof getActiveWeekNum === 'function' ? getActiveWeekNum() : null;
+  const data   = typeof weeks[_activeTab] === 'string' ? { url: weeks[_activeTab], debut:'', fin:'' } : weeks[_activeTab];
+  const status = weekStatus(data);
+  const isActive = _activeTab === active;
 
-  container.innerHTML = nums.map(num => {
-    const data   = typeof weeks[num] === 'string' ? { url: weeks[num], debut:'', fin:'' } : weeks[num];
-    const status = weekStatus(data);
-    const isActive = num === active;
+  let dateLabel = '';
+  if (data.debut && data.fin) {
+    const d = new Date(data.debut + 'T00:00:00');
+    const f = new Date(data.fin   + 'T00:00:00');
+    dateLabel = `${d.getDate()} ${MOIS_FR[d.getMonth()]} au ${f.getDate()} ${MOIS_FR[f.getMonth()]}`;
+  }
 
-    let dateLabel = '';
-    if (data.debut && data.fin) {
-      const d = new Date(data.debut + 'T00:00:00');
-      const f = new Date(data.fin   + 'T00:00:00');
-      dateLabel = `${d.getDate()} au ${f.getDate()} ${MOIS_FR[f.getMonth()]}`;
+  content.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:var(--text)">Semaine ${_activeTab}
+          ${isActive ? '<span style="font-size:9px;background:var(--noz-navy);color:#fff;padding:1px 6px;border-radius:8px;margin-left:6px">ACTIVE</span>' : ''}
+        </div>
+        ${dateLabel ? `<div style="font-size:11px;color:var(--text-muted);margin-top:1px">${dateLabel}</div>` : ''}
+      </div>
+      <span style="font-size:10px;font-weight:600;color:${status.color};background:${status.color}18;padding:2px 8px;border-radius:10px">${status.label}</span>
+    </div>
+
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Lien Google Sheets (CSV) :</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <input id="week-url-input-${_activeTab}" type="url"
+        value="${data.url || ''}"
+        placeholder="https://docs.google.com/spreadsheets/..."
+        style="flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font-size:11px;background:var(--bg-card);color:var(--text);outline:none;min-width:0"
+        onfocus="this.style.borderColor='var(--noz-navy)'"
+        onblur="this.style.borderColor='var(--border)'"
+        onkeydown="if(event.key==='Enter')saveWeekTab('${_activeTab}')" />
+      <button onclick="saveWeekTab('${_activeTab}')"
+        style="padding:7px 12px;border:none;border-radius:var(--radius-sm);background:var(--noz-navy);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
+        Enregistrer
+      </button>
+    </div>
+    <div id="week-tab-status" style="font-size:10px;color:var(--text-muted);min-height:14px;margin-bottom:8px"></div>
+
+    <div style="display:flex;gap:8px">
+      ${!isActive ? `<button onclick="activateWeekTab('${_activeTab}')"
+        style="flex:1;padding:7px;border:1px solid var(--noz-navy);border-radius:var(--radius-sm);background:transparent;color:var(--noz-navy);font-size:11px;font-weight:600;cursor:pointer">
+        ✓ Activer cette semaine
+      </button>` : ''}
+      <button onclick="deleteWeekAdmin('${_activeTab}')"
+        style="padding:7px 12px;border:1px solid #ef4444;border-radius:var(--radius-sm);background:transparent;color:#ef4444;font-size:11px;cursor:pointer">
+        Supprimer
+      </button>
+    </div>`;
+}
+
+function selectWeekTab(num) {
+  _activeTab = num;
+  renderWeekListAdmin();
+}
+
+function addNewWeekTab() {
+  const content = document.getElementById('week-tab-content');
+  content.innerHTML = `
+    <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">Nouvelle semaine</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Coller le lien Google Sheets publié en CSV :</div>
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <input id="sheet-url-input" type="url"
+        placeholder="https://docs.google.com/spreadsheets/..."
+        style="flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font-size:11px;background:var(--bg-card);color:var(--text);outline:none;min-width:0"
+        onfocus="this.style.borderColor='var(--noz-navy)'"
+        onblur="this.style.borderColor='var(--border)'"
+        onkeydown="if(event.key==='Enter')addWeekFromURL()" />
+      <button onclick="addWeekFromURL()"
+        style="padding:7px 12px;border:none;border-radius:var(--radius-sm);background:var(--noz-navy);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
+        Ajouter
+      </button>
+    </div>
+    <div id="sheet-status" style="font-size:10px;color:var(--text-muted);min-height:14px"></div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:8px">
+      Le numéro et les dates seront détectés automatiquement depuis le document.
+    </div>`;
+
+  const inp = document.getElementById('sheet-url-input');
+  if (inp) setTimeout(() => inp.focus(), 50);
+}
+
+async function saveWeekTab(num) {
+  const inp = document.getElementById(`week-url-input-${num}`);
+  const statusEl = document.getElementById('week-tab-status');
+  let url = (inp?.value || '').trim();
+
+  if (url.includes('/pubhtml')) url = url.replace('/pubhtml', '/pub?output=csv');
+  if (url && !url.includes('output=csv')) url += (url.includes('?') ? '&' : '?') + 'output=csv';
+
+  if (!url || !url.startsWith('https://docs.google.com/spreadsheets')) {
+    if (statusEl) statusEl.textContent = '❌ URL invalide';
+    return;
+  }
+  if (statusEl) statusEl.textContent = '⏳ Vérification…';
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+
+    let debut = null, fin = null;
+    for (const line of text.split('\n').slice(0, 20)) {
+      const cols = line.split(',');
+      if (cols[0].trim() === 'S :' && /^\d+$/.test((cols[1]||'').trim())) {
+        const dp = (cols[2]||'').trim().split('/');
+        const fp = (cols[4]||'').trim().split('/');
+        if (dp.length===3) debut = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
+        if (fp.length===3) fin   = `${fp[2]}-${fp[1].padStart(2,'0')}-${fp[0].padStart(2,'0')}`;
+        break;
+      }
     }
 
-    return `
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);${isActive ? 'background:#f0f4ff' : ''}">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:${isActive ? '700' : '600'};color:var(--text)">
-            Semaine ${num}${dateLabel ? ' — ' + dateLabel : ''}
-            ${isActive ? '<span style="font-size:9px;background:var(--noz-navy);color:#fff;padding:1px 6px;border-radius:8px;margin-left:6px">ACTIVE</span>' : ''}
-          </div>
-          ${status.label === 'Archivée' ? '<div style="font-size:10px;color:var(--text-muted);font-style:italic">Archivée automatiquement</div>' : ''}
-        </div>
-        <span style="font-size:10px;font-weight:600;color:${status.color};background:${status.color}18;padding:2px 8px;border-radius:10px;white-space:nowrap">${status.label}</span>
-        <button onclick="deleteWeekAdmin('${num}')" title="Supprimer" style="background:none;border:none;color:var(--text-light);cursor:pointer;font-size:18px;line-height:1;padding:0 2px;flex-shrink:0">×</button>
-      </div>`;
-  }).join('');
+    if (typeof saveWeekURL === 'function') saveWeekURL(num, url, debut, fin);
+    if (statusEl) { statusEl.style.color = '#16a34a'; statusEl.textContent = '✅ Enregistré'; }
+    setTimeout(() => renderWeekListAdmin(), 1000);
+  } catch(e) {
+    if (statusEl) { statusEl.style.color = '#ef4444'; statusEl.textContent = "❌ Lien inaccessible"; }
+  }
+}
+
+function activateWeekTab(num) {
+  if (typeof setActiveWeekNum === 'function') setActiveWeekNum(num);
+  if (typeof _fbAvailable !== 'undefined' && _fbAvailable && typeof fbSet === 'function') {
+    fbSet('config/active_week', num);
+  }
+  renderWeekListAdmin();
+  addBotMessage(`✅ Semaine <strong>${num}</strong> activée. Les employés verront cette semaine au prochain chargement.`);
 }
 
 async function addWeekFromURL() {
@@ -1444,19 +1559,18 @@ async function addWeekFromURL() {
   if (url && !url.includes('output=csv')) url += (url.includes('?') ? '&' : '?') + 'output=csv';
 
   if (!url || !url.startsWith('https://docs.google.com/spreadsheets')) {
-    if (status) status.textContent = '❌ URL invalide';
+    if (status) { status.style.color='#ef4444'; status.textContent = '❌ URL invalide'; }
     setTimeout(() => { if(status) status.textContent = ''; }, 2500);
     return;
   }
 
-  if (status) status.textContent = '⏳ Vérification…';
+  if (status) { status.style.color='var(--text-muted)'; status.textContent = '⏳ Vérification…'; }
 
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const text = await res.text();
 
-    // Détecter numéro de semaine et dates depuis le CSV
     let weekNum = null, debut = null, fin = null;
     for (const line of text.split('\n').slice(0, 20)) {
       const cols = line.split(',');
@@ -1471,7 +1585,7 @@ async function addWeekFromURL() {
     }
 
     if (!weekNum) {
-      if (status) status.textContent = '❌ Semaine non détectée dans ce document';
+      if (status) { status.style.color='#ef4444'; status.textContent = '❌ Semaine non détectée dans ce document'; }
       setTimeout(() => { if(status) status.textContent=''; }, 3000);
       return;
     }
@@ -1479,15 +1593,17 @@ async function addWeekFromURL() {
     if (typeof saveWeekURL === 'function') saveWeekURL(weekNum, url, debut, fin);
     if (inp) inp.value = '';
     if (status) status.textContent = '';
+
+    _activeTab = String(weekNum);
     renderWeekListAdmin();
 
     const dateStr = debut && fin
       ? ` (${new Date(debut+'T00:00:00').getDate()} au ${new Date(fin+'T00:00:00').getDate()} ${MOIS_FR[new Date(fin+'T00:00:00').getMonth()]})`
       : '';
-    addBotMessage(`✅ <strong>Semaine ${weekNum}</strong>${dateStr} enregistrée.<br>Elle apparaîtra dans le sélecteur de l'application dès que les employés rechargent la page.`);
+    addBotMessage(`✅ <strong>Semaine ${weekNum}</strong>${dateStr} ajoutée.`);
 
   } catch(e) {
-    if (status) status.textContent = "❌ Lien inaccessible — vérifiez qu'il est publié sur le web";
+    if (status) { status.style.color='#ef4444'; status.textContent = "❌ Lien inaccessible — vérifiez qu'il est publié sur le web"; }
     setTimeout(() => { if(status) status.textContent=''; }, 4000);
   }
 }
@@ -1497,9 +1613,10 @@ function deleteWeekAdmin(num) {
   const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
   delete weeks[num];
   localStorage.setItem('noz_weeks', JSON.stringify(weeks));
-  if (typeof _fbAvailable !== 'undefined' && _fbAvailable && window.FIREBASE_URL) {
-    fetch(`${window.FIREBASE_URL}/config/weeks/${num}.json`, { method: 'DELETE' });
+  if (typeof _fbAvailable !== 'undefined' && _fbAvailable && typeof fbSet === 'function') {
+    fbSet(`config/weeks/${num}`, null);
   }
+  _activeTab = null;
   renderWeekListAdmin();
 }
 
