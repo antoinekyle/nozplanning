@@ -1107,6 +1107,87 @@ function renderRecapJour() {
   el.innerHTML = rows || '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">Aucun employé prévu aujourd\'hui</div>';
 }
 
+/* ——— SÉLECTEUR DE SEMAINE ————————————————— */
+function buildWeekBadge() {
+  const badge = document.getElementById('week-badge');
+  if (!badge) return;
+
+  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
+  const nums  = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
+
+  badge.textContent = `Semaine ${SEMAINE.numero}`;
+
+  if (nums.length <= 1) return; // une seule semaine, pas de sélecteur
+
+  badge.style.cursor = 'pointer';
+  badge.title = 'Changer de semaine';
+  badge.innerHTML = `Semaine ${SEMAINE.numero} <span style="font-size:9px;opacity:.6">▼</span>`;
+  badge.onclick = (e) => { e.stopPropagation(); toggleWeekPicker(badge, nums); };
+}
+
+function toggleWeekPicker(badge, nums) {
+  const existing = document.getElementById('week-picker');
+  if (existing) { existing.remove(); return; }
+
+  const rect   = badge.getBoundingClientRect();
+  const active = String(typeof getActiveWeekNum === 'function' ? getActiveWeekNum() : SEMAINE.numero);
+
+  const picker = document.createElement('div');
+  picker.id = 'week-picker';
+  picker.style.cssText = `
+    position:fixed;top:${rect.bottom + 6}px;right:12px;
+    background:var(--bg-card);border:1px solid var(--border);
+    border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);
+    z-index:9999;overflow:hidden;min-width:170px;
+  `;
+
+  nums.forEach(num => {
+    const isActive = num === active;
+    const btn = document.createElement('button');
+    btn.style.cssText = `
+      display:flex;align-items:center;justify-content:space-between;
+      width:100%;padding:12px 16px;border:none;
+      background:${isActive ? 'var(--noz-navy)' : 'transparent'};
+      color:${isActive ? '#fff' : 'var(--text)'};
+      font-size:14px;font-weight:${isActive ? '700' : '400'};
+      text-align:left;cursor:pointer;gap:12px;
+    `;
+    btn.innerHTML = `<span>Semaine ${num}</span>${isActive ? '<span style="font-size:11px">✓</span>' : ''}`;
+    btn.onclick = (e) => { e.stopPropagation(); switchWeek(num); };
+    picker.appendChild(btn);
+  });
+
+  document.body.appendChild(picker);
+  setTimeout(() => {
+    document.addEventListener('click', () => document.getElementById('week-picker')?.remove(), { once: true });
+  }, 50);
+}
+
+async function switchWeek(num) {
+  document.getElementById('week-picker')?.remove();
+  if (typeof setActiveWeekNum === 'function') setActiveWeekNum(num);
+  showSyncToast(`Chargement semaine ${num}…`);
+
+  if (typeof fetchAndApplySheet === 'function') await fetchAndApplySheet();
+
+  // Reconstruire toute l'interface
+  document.getElementById('nav').innerHTML   = '';
+  document.getElementById('pages').innerHTML = '';
+
+  buildNav();
+  buildWeekBadge();
+  buildGlobalPage();
+  buildCalendarPage();
+  buildPointagePage();
+  STAFF.forEach((s, i) => buildPersonPage(s, i));
+  STAFF.forEach((s, i) => {
+    const ct = document.getElementById('consigne-count-' + i);
+    renderConsignesFor(s.prenom, null, ct);
+  });
+  showPage('global');
+  showSyncToast(`Semaine ${SEMAINE.numero} chargée ✓`);
+}
+
 /* ——— INIT ———————————————————————————————— */
 async function init() {
   // Synchroniser l'URL du sheet depuis Firebase puis charger les données
@@ -1120,6 +1201,7 @@ async function init() {
   document.getElementById('week-badge').textContent = `Semaine ${SEMAINE.numero}`;
 
   buildNav();
+  buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
   buildPointagePage();
