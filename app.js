@@ -600,13 +600,20 @@ function renderConsignesFor(prenom, _unused, countEl) {
   }
 
   const icons = { haute: '🔴', normale: '🟡', info: '🔵' };
+  const jourLabels = { Lun:'Lundi', Mar:'Mardi', Mer:'Mercredi', Jeu:'Jeudi', Ven:'Vendredi', Sam:'Samedi', Semaine:'Semaine' };
+  const JOURS_ORDER = ['Lun','Mar','Mer','Jeu','Ven','Sam','Semaine'];
+
+  // Grouper par jour
+  const byJour = {};
+  for (const c of list) {
+    const j = c.jour || 'Semaine';
+    if (!byJour[j]) byJour[j] = [];
+    byJour[j].push(c);
+  }
+  const joursPresents = JOURS_ORDER.filter(j => byJour[j]);
+
   tabEl.innerHTML = `
-    <div style="
-      background:#fff8f0;
-      border:1.5px solid #f97316;
-      border-radius:var(--radius-md);
-      overflow:hidden;
-    ">
+    <div style="background:#fff8f0;border:1.5px solid #f97316;border-radius:var(--radius-md);overflow:hidden;">
       <div style="background:#f97316;padding:8px 14px;display:flex;align-items:center;justify-content:space-between">
         <span style="color:#fff;font-size:12px;font-weight:700;letter-spacing:.3px">
           📌 CONSIGNES DU GÉRANT
@@ -614,19 +621,24 @@ function renderConsignesFor(prenom, _unused, countEl) {
         </span>
         <button onclick="toggleConsignesTab(${idx})" style="background:none;border:none;color:rgba(255,255,255,0.8);cursor:pointer;font-size:16px;padding:0;line-height:1">×</button>
       </div>
-      <div style="padding:10px 14px;display:flex;flex-direction:column;gap:8px">
-        ${list.map(c => `
-          <div style="display:flex;align-items:flex-start;gap:8px">
-            <span style="font-size:13px;flex-shrink:0;margin-top:1px">${icons[c.priority] || '🟡'}</span>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:13px;color:#7c2d12;font-weight:500;line-height:1.4">${escHtml(c.text)}</div>
-              <div style="font-size:10px;color:#c2410c;margin-top:2px">
-                ${c.from} · ${c.date}
-                ${c.dest === 'Tous' ? '<span style="background:#fed7aa;color:#c2410c;padding:0 5px;border-radius:8px;margin-left:4px;font-size:9px">Toute l\'équipe</span>' : ''}
-              </div>
+      <div style="padding:10px 14px;display:flex;flex-direction:column;gap:10px">
+        ${joursPresents.map(j => `
+          <div>
+            ${j !== 'Semaine' ? `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#c2410c;margin-bottom:5px;padding-bottom:3px;border-bottom:1px solid #fed7aa">${jourLabels[j] || j}</div>` : ''}
+            <div style="display:flex;flex-direction:column;gap:6px">
+              ${byJour[j].map(c => `
+                <div style="display:flex;align-items:flex-start;gap:8px">
+                  <span style="font-size:13px;flex-shrink:0;margin-top:1px">${icons[c.priority] || '🟡'}</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:13px;color:#7c2d12;font-weight:500;line-height:1.4">${escHtml(c.text)}</div>
+                    <div style="font-size:10px;color:#c2410c;margin-top:2px">
+                      ${c.from} · ${c.date}
+                      ${c.dest === 'Tous' ? '<span style="background:#fed7aa;color:#c2410c;padding:0 5px;border-radius:8px;margin-left:4px;font-size:9px">Équipe</span>' : ''}
+                    </div>
+                  </div>
+                </div>`).join('')}
             </div>
-          </div>
-        `).join('<hr style="border:none;border-top:1px solid #fed7aa;margin:2px 0">')}
+          </div>`).join('')}
       </div>
     </div>`;
 }

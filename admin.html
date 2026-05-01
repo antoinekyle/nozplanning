@@ -487,7 +487,7 @@
         </div>
 
         <!-- Sélecteur personne + priorité -->
-        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
           <select id="admin-consigne-dest" style="flex:1;min-width:120px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font-size:12px;background:var(--bg-card);color:var(--text);cursor:pointer">
             <option value="Tous">👥 Toute l'équipe</option>
           </select>
@@ -495,6 +495,18 @@
             <option value="normale">🟡 Normale</option>
             <option value="haute">🔴 Haute</option>
             <option value="info">🔵 Info</option>
+          </select>
+        </div>
+        <!-- Sélecteur de jour -->
+        <div style="margin-bottom:8px">
+          <select id="admin-consigne-jour" style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font-size:12px;background:var(--bg-card);color:var(--text);cursor:pointer">
+            <option value="Semaine">📅 Toute la semaine</option>
+            <option value="Lun">Lundi</option>
+            <option value="Mar">Mardi</option>
+            <option value="Mer">Mercredi</option>
+            <option value="Jeu">Jeudi</option>
+            <option value="Ven">Vendredi</option>
+            <option value="Sam">Samedi</option>
           </select>
         </div>
 
@@ -1191,6 +1203,7 @@ async function submitAdminConsigne() {
   const text     = document.getElementById('admin-consigne-text').value.trim();
   const dest     = document.getElementById('admin-consigne-dest').value;
   const priority = document.getElementById('admin-consigne-priority').value;
+  const jour     = document.getElementById('admin-consigne-jour')?.value || 'Semaine';
   if (!text) {
     document.getElementById('admin-consigne-text').style.borderColor = '#dc2626';
     setTimeout(() => document.getElementById('admin-consigne-text').style.borderColor = 'var(--border)', 1500);
@@ -1201,6 +1214,7 @@ async function submitAdminConsigne() {
     dest,
     text,
     priority,
+    jour,
     from:     'Antoine (Gérant)',
     date:     new Date().toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }),
   };
@@ -1219,12 +1233,17 @@ async function renderAdminConsignes() {
     return;
   }
   const icons = { haute: '🔴', normale: '🟡', info: '🔵' };
+  const jourLabels = { Lun:'Lundi', Mar:'Mardi', Mer:'Mercredi', Jeu:'Jeudi', Ven:'Vendredi', Sam:'Samedi', Semaine:'Toute la semaine' };
   container.innerHTML = all.map(c => `
     <div class="history-item" style="display:flex;align-items:flex-start;gap:8px">
       <span style="font-size:12px;flex-shrink:0">${icons[c.priority]||'🟡'}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:2px">
-          Pour : ${c.dest} · ${c.date}
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:2px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+          <span>Pour : ${c.dest}</span>
+          <span style="background:var(--noz-navy);color:#fff;font-size:9px;padding:1px 6px;border-radius:8px">
+            ${jourLabels[c.jour] || c.jour || 'Semaine'}
+          </span>
+          <span style="color:var(--text-light)">· ${c.date}</span>
         </div>
         <div class="history-msg">${escHtml(c.text)}</div>
       </div>
