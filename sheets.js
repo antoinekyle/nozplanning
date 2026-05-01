@@ -17,15 +17,40 @@ function getAllWeeks() {
   catch { return {}; }
 }
 
-function saveWeekURL(num, url) {
+// Sauvegarde une semaine avec ses métadonnées { url, debut, fin }
+function saveWeekURL(num, url, debut, fin) {
   const weeks = getAllWeeks();
-  weeks[String(num)] = url;
+  weeks[String(num)] = { url, debut: debut || '', fin: fin || '' };
   localStorage.setItem(WEEKS_KEY, JSON.stringify(weeks));
   localStorage.setItem(SHEET_URL_KEY, url);
   if (typeof _fbAvailable !== 'undefined' && _fbAvailable && typeof fbSet === 'function') {
-    fbSet(`config/weeks/${num}`, url);
+    fbSet(`config/weeks/${num}`, { url, debut: debut || '', fin: fin || '' });
     fbSet('config/sheet_url', url);
   }
+}
+
+// Retourne le numéro de la semaine active selon la date d'aujourd'hui
+function detectCurrentWeek() {
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const weeks = getAllWeeks();
+  // Cherche la semaine dont la plage contient aujourd'hui
+  for (const [num, data] of Object.entries(weeks)) {
+    const entry = typeof data === 'string' ? { url: data } : data;
+    if (!entry.debut || !entry.fin) continue;
+    const debut = new Date(entry.debut + 'T00:00:00');
+    const fin   = new Date(entry.fin   + 'T23:59:59');
+    if (today >= debut && today <= fin) return num;
+  }
+  // Sinon prend la semaine la plus récente non archivée
+  const upcoming = Object.entries(weeks)
+    .filter(([, data]) => {
+      const entry = typeof data === 'string' ? {} : data;
+      if (!entry.fin) return true;
+      return new Date(entry.fin + 'T23:59:59') >= today;
+    })
+    .sort(([a], [b]) => Number(a) - Number(b));
+  return upcoming[0]?.[0] || null;
 }
 
 function getActiveWeekNum() {
@@ -40,7 +65,8 @@ function getSheetURL() {
   const active = getActiveWeekNum();
   if (active) {
     const weeks = getAllWeeks();
-    if (weeks[active]) return weeks[active];
+    const entry = weeks[active];
+    if (entry) return typeof entry === 'string' ? entry : entry.url;
   }
   return localStorage.getItem(SHEET_URL_KEY) || SHEET_CSV_URL_DEFAULT;
 }
@@ -176,8 +202,8 @@ async function fetchAndApplySheet() {
         if (mag)   SEMAINE.magasin = mag;
         if (debut) Object.assign(JOURS_DATES, calcJoursDates(debut));
 
-        // Enregistrer automatiquement cette semaine
-        saveWeekURL(num, SHEET_CSV_URL);
+        // Enregistrer automatiquement cette semaine avec ses dates
+        saveWeekURL(num, SHEET_CSV_URL, debut, fin);
         setActiveWeekNum(num);
         break;
       }

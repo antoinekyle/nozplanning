@@ -1190,9 +1190,14 @@ async function switchWeek(num) {
 
 /* ——— INIT ———————————————————————————————— */
 async function init() {
-  // Synchroniser l'URL du sheet depuis Firebase puis charger les données
+  // Synchroniser les semaines depuis Firebase
   if (typeof loadSheetURLFromFirebase === 'function') {
     await loadSheetURLFromFirebase();
+  }
+  // Auto-sélectionner la semaine en cours selon la date
+  if (typeof detectCurrentWeek === 'function') {
+    const current = detectCurrentWeek();
+    if (current && typeof setActiveWeekNum === 'function') setActiveWeekNum(current);
   }
   if (typeof fetchAndApplySheet === 'function') {
     await fetchAndApplySheet();

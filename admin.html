@@ -463,31 +463,36 @@
         </div>
       </div>
 
-      <!-- Module Google Sheets -->
+      <!-- Module Semaines -->
       <div style="margin-bottom:14px">
-        <div class="section-label" style="display:flex;align-items:center;justify-content:space-between">
-          <span>📄 Planning Google Sheets</span>
-          <span id="sheet-status" style="font-size:10px;color:var(--text-muted)"></span>
+        <div class="section-label">
+          <span>📅 Planning par semaine</span>
         </div>
-        <div class="rules-card" style="padding:12px 14px">
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
-            Colle l'URL CSV de la nouvelle semaine pour mettre à jour le planning sur tous les appareils.
+        <div class="rules-card" style="padding:0;overflow:hidden">
+
+          <!-- Liste des semaines -->
+          <div id="week-list-admin" style="max-height:260px;overflow-y:auto"></div>
+
+          <!-- Ajouter une semaine -->
+          <div style="padding:10px 12px;border-top:1px solid var(--border);background:var(--bg-muted)">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Coller le lien de la nouvelle semaine :</div>
+            <div style="display:flex;gap:8px">
+              <input
+                id="sheet-url-input"
+                type="url"
+                placeholder="https://docs.google.com/spreadsheets/..."
+                style="flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font-size:12px;background:var(--bg-card);color:var(--text);outline:none;min-width:0"
+                onfocus="this.style.borderColor='var(--noz-navy)'"
+                onblur="this.style.borderColor='var(--border)'"
+                onkeydown="if(event.key==='Enter')addWeekFromURL()"
+              />
+              <button
+                onclick="addWeekFromURL()"
+                style="padding:7px 14px;border:none;border-radius:var(--radius-sm);background:var(--noz-navy);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0"
+              >Ajouter</button>
+            </div>
+            <div id="sheet-status" style="font-size:10px;color:var(--text-muted);margin-top:4px;min-height:14px"></div>
           </div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input
-              id="sheet-url-input"
-              type="url"
-              placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
-              style="flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;font-size:12px;background:var(--bg-muted);color:var(--text);outline:none;min-width:0"
-              onfocus="this.style.borderColor='var(--noz-navy)'"
-              onblur="this.style.borderColor='var(--border)'"
-            />
-            <button
-              onclick="applyNewSheetURL()"
-              style="padding:8px 14px;border:none;border-radius:var(--radius-sm);background:var(--noz-navy);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0"
-            >Appliquer</button>
-          </div>
-          <div id="sheet-url-current" style="margin-top:6px;font-size:10px;color:var(--text-muted);word-break:break-all"></div>
         </div>
       </div>
 
@@ -1128,11 +1133,35 @@ async function sendMessage() {
       try {
         const res = await fetch(url);
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        saveSheetURL(url);
-        renderSheetURLDisplay();
-        addBotMessage('\u2705 Nouveau planning Google Sheets enregistr\u00e9 et synchronis\u00e9 sur tous les appareils.<br><br>Le planning sera mis \u00e0 jour au prochain chargement de l\'application employ\u00e9.');
+        const text2 = await res.text();
+        // Détecter numéro de semaine et dates
+        let weekNum = null, debut = null, fin = null;
+        for (const line of text2.split('\n').slice(0, 20)) {
+          const cols = line.split(',');
+          if (cols[0].trim() === 'S :' && /^\d+$/.test((cols[1]||'').trim())) {
+            weekNum = parseInt(cols[1].trim());
+            const dp = (cols[2]||'').trim().split('/');
+            const fp = (cols[4]||'').trim().split('/');
+            if (dp.length===3) debut = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
+            if (fp.length===3) fin   = `${fp[2]}-${fp[1].padStart(2,'0')}-${fp[0].padStart(2,'0')}`;
+            break;
+          }
+        }
+        if (weekNum) {
+          saveWeekURL(weekNum, url, debut, fin);
+          renderWeekListAdmin();
+          const dateStr = debut && fin
+            ? ` (${new Date(debut+'T00:00:00').getDate()} au ${new Date(fin+'T00:00:00').getDate()} ${MOIS_FR[new Date(fin+'T00:00:00').getMonth()]})`
+            : '';
+          addBotMessage(`✅ <strong>Semaine ${weekNum}</strong>${dateStr} enregistrée.<br>Elle apparaîtra dans le sélecteur dès que les employés rechargent la page.`);
+        } else {
+          // Fallback : ancienne méthode URL simple
+          saveSheetURL(url);
+          renderWeekListAdmin();
+          addBotMessage('✅ Planning enregistré. Numéro de semaine non détecté — vérifiez le format du document.');
+        }
       } catch(e) {
-        addBotMessage('\u274c Impossible d\'acc\u00e9der \u00e0 ce lien. V\u00e9rifiez que le sheet est bien publi\u00e9 sur le web :<br><br>Fichier \u2192 Partager \u2192 Publier sur le web \u2192 CSV \u2192 Publier.');
+        addBotMessage('❌ Impossible d\'accéder à ce lien. Vérifiez que le sheet est bien publié sur le web :<br><br>Fichier → Partager → Publier sur le web → CSV → Publier.');
       }
     }, 600);
     return;
@@ -1349,53 +1378,133 @@ function genererRecapPDF() {
   setTimeout(() => w.print(), 500);
 }
 
-// ——— INIT ————————————————————————————————
-// ——— GOOGLE SHEETS URL ————————————————————
-function renderSheetURLDisplay() {
-  const el = document.getElementById('sheet-url-current');
-  const inp = document.getElementById('sheet-url-input');
-  const status = document.getElementById('sheet-status');
-  if (!el) return;
-  const url = typeof getSheetURL === 'function' ? getSheetURL() : '';
-  if (url) {
-    const match = url.match(/\/d\/e\/([^/]+)\//);
-    const shortId = match ? match[1].slice(0, 20) + '\u2026' : url.slice(0, 40) + '\u2026';
-    el.textContent = 'URL active : ' + shortId;
-    if (status) status.textContent = '\u2705 Connect\u00e9';
-    if (inp) inp.placeholder = url;
-  } else {
-    el.textContent = 'Aucune URL configur\u00e9e';
-    if (status) status.textContent = '';
-  }
+// ——— GESTION SEMAINES ————————————————————
+
+const MOIS_FR = ['jan','fév','mar','avr','mai','juin','juil','aoû','sep','oct','nov','déc'];
+
+function weekStatus(data) {
+  const today = new Date(); today.setHours(12,0,0,0);
+  if (!data.debut || !data.fin) return { label: 'Enregistrée', color: '#6b7280', order: 2 };
+  const debut = new Date(data.debut + 'T00:00:00');
+  const fin   = new Date(data.fin   + 'T23:59:59');
+  if (today < debut)  return { label: 'À venir',  color: '#3b82f6', order: 1 };
+  if (today <= fin)   return { label: 'En cours', color: '#16a34a', order: 0 };
+  const daysSince = (today - fin) / 86400000;
+  if (daysSince < 21) return { label: 'Terminée', color: '#f59e0b', order: 3 };
+  return { label: 'Archivée', color: '#9ca3af', order: 4 };
 }
 
-async function applyNewSheetURL() {
-  const inp = document.getElementById('sheet-url-input');
+function renderWeekListAdmin() {
+  const container = document.getElementById('week-list-admin');
+  if (!container) return;
+
+  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
+  const nums  = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
+
+  if (!nums.length) {
+    container.innerHTML = '<div style="padding:14px 12px;font-size:12px;color:var(--text-muted);font-style:italic">Aucune semaine enregistrée.</div>';
+    return;
+  }
+
+  const active = typeof getActiveWeekNum === 'function' ? getActiveWeekNum() : null;
+
+  container.innerHTML = nums.map(num => {
+    const data   = typeof weeks[num] === 'string' ? { url: weeks[num], debut:'', fin:'' } : weeks[num];
+    const status = weekStatus(data);
+    const isActive = num === active;
+
+    let dateLabel = '';
+    if (data.debut && data.fin) {
+      const d = new Date(data.debut + 'T00:00:00');
+      const f = new Date(data.fin   + 'T00:00:00');
+      dateLabel = `${d.getDate()} au ${f.getDate()} ${MOIS_FR[f.getMonth()]}`;
+    }
+
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);${isActive ? 'background:#f0f4ff' : ''}">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:${isActive ? '700' : '600'};color:var(--text)">
+            Semaine ${num}${dateLabel ? ' — ' + dateLabel : ''}
+            ${isActive ? '<span style="font-size:9px;background:var(--noz-navy);color:#fff;padding:1px 6px;border-radius:8px;margin-left:6px">ACTIVE</span>' : ''}
+          </div>
+          ${status.label === 'Archivée' ? '<div style="font-size:10px;color:var(--text-muted);font-style:italic">Archivée automatiquement</div>' : ''}
+        </div>
+        <span style="font-size:10px;font-weight:600;color:${status.color};background:${status.color}18;padding:2px 8px;border-radius:10px;white-space:nowrap">${status.label}</span>
+        <button onclick="deleteWeekAdmin('${num}')" title="Supprimer" style="background:none;border:none;color:var(--text-light);cursor:pointer;font-size:18px;line-height:1;padding:0 2px;flex-shrink:0">×</button>
+      </div>`;
+  }).join('');
+}
+
+async function addWeekFromURL() {
+  const inp    = document.getElementById('sheet-url-input');
   const status = document.getElementById('sheet-status');
   let url = (inp?.value || '').trim();
 
-  // Convertir pubhtml → CSV si besoin
   if (url.includes('/pubhtml')) url = url.replace('/pubhtml', '/pub?output=csv');
   if (url && !url.includes('output=csv')) url += (url.includes('?') ? '&' : '?') + 'output=csv';
 
   if (!url || !url.startsWith('https://docs.google.com/spreadsheets')) {
-    if (status) { status.textContent = '\u274c URL invalide'; setTimeout(() => renderSheetURLDisplay(), 2000); }
+    if (status) status.textContent = '❌ URL invalide';
+    setTimeout(() => { if(status) status.textContent = ''; }, 2500);
     return;
   }
 
-  if (status) status.textContent = '\u23f3 Test de connexion\u2026';
+  if (status) status.textContent = '⏳ Vérification…';
+
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    saveSheetURL(url);
+    const text = await res.text();
+
+    // Détecter numéro de semaine et dates depuis le CSV
+    let weekNum = null, debut = null, fin = null;
+    for (const line of text.split('\n').slice(0, 20)) {
+      const cols = line.split(',');
+      if (cols[0].trim() === 'S :' && /^\d+$/.test((cols[1]||'').trim())) {
+        weekNum = parseInt(cols[1].trim());
+        const dp = (cols[2]||'').trim().split('/');
+        const fp = (cols[4]||'').trim().split('/');
+        if (dp.length===3) debut = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
+        if (fp.length===3) fin   = `${fp[2]}-${fp[1].padStart(2,'0')}-${fp[0].padStart(2,'0')}`;
+        break;
+      }
+    }
+
+    if (!weekNum) {
+      if (status) status.textContent = '❌ Semaine non détectée dans ce document';
+      setTimeout(() => { if(status) status.textContent=''; }, 3000);
+      return;
+    }
+
+    if (typeof saveWeekURL === 'function') saveWeekURL(weekNum, url, debut, fin);
     if (inp) inp.value = '';
-    renderSheetURLDisplay();
-    addBotMessage('\u2705 URL du planning mise \u00e0 jour. Le nouveau sheet sera charg\u00e9 au prochain d\u00e9marrage de l\'application.<br><br>\ud83d\udca1 Dites-moi "<strong>recharger le planning</strong>" pour l\'appliquer maintenant.');
+    if (status) status.textContent = '';
+    renderWeekListAdmin();
+
+    const dateStr = debut && fin
+      ? ` (${new Date(debut+'T00:00:00').getDate()} au ${new Date(fin+'T00:00:00').getDate()} ${MOIS_FR[new Date(fin+'T00:00:00').getMonth()]})`
+      : '';
+    addBotMessage(`✅ <strong>Semaine ${weekNum}</strong>${dateStr} enregistrée.<br>Elle apparaîtra dans le sélecteur de l'application dès que les employés rechargent la page.`);
+
   } catch(e) {
-    if (status) { status.textContent = '\u274c URL inaccessible'; setTimeout(() => renderSheetURLDisplay(), 3000); }
-    addBotMessage('\u274c Impossible d\'acc\u00e9der \u00e0 cette URL. V\u00e9rifiez que le sheet est bien publi\u00e9 sur le web (Fichier \u2192 Partager \u2192 Publier sur le web).');
+    if (status) status.textContent = '❌ Lien inaccessible — vérifiez qu'il est publié sur le web';
+    setTimeout(() => { if(status) status.textContent=''; }, 4000);
   }
 }
+
+function deleteWeekAdmin(num) {
+  if (!confirm(`Supprimer la semaine ${num} ?`)) return;
+  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
+  delete weeks[num];
+  localStorage.setItem('noz_weeks', JSON.stringify(weeks));
+  if (typeof _fbAvailable !== 'undefined' && _fbAvailable && window.FIREBASE_URL) {
+    fetch(`${window.FIREBASE_URL}/config/weeks/${num}.json`, { method: 'DELETE' });
+  }
+  renderWeekListAdmin();
+}
+
+// Compatibilité : ancienne fonction applyNewSheetURL → redirige vers addWeekFromURL
+async function applyNewSheetURL() { await addWeekFromURL(); }
 
 async function boot() {
   await initFirebase();
@@ -1403,7 +1512,7 @@ async function boot() {
   initAdminConsignesSelect();
   renderAdminConsignes();
   renderHistory();
-  renderSheetURLDisplay();
+  renderWeekListAdmin();
 }
 
 if (sessionStorage.getItem('noz_admin_auth') === '1') {
