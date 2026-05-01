@@ -463,7 +463,35 @@
         </div>
       </div>
 
-      <!-- Module consignes -->
+      <!-- Module Google Sheets -->
+      <div style="margin-bottom:14px">
+        <div class="section-label" style="display:flex;align-items:center;justify-content:space-between">
+          <span>📄 Planning Google Sheets</span>
+          <span id="sheet-status" style="font-size:10px;color:var(--text-muted)"></span>
+        </div>
+        <div class="rules-card" style="padding:12px 14px">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
+            Colle l'URL CSV de la nouvelle semaine pour mettre à jour le planning sur tous les appareils.
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input
+              id="sheet-url-input"
+              type="url"
+              placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
+              style="flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;font-size:12px;background:var(--bg-muted);color:var(--text);outline:none;min-width:0"
+              onfocus="this.style.borderColor='var(--noz-navy)'"
+              onblur="this.style.borderColor='var(--border)'"
+            />
+            <button
+              onclick="applyNewSheetURL()"
+              style="padding:8px 14px;border:none;border-radius:var(--radius-sm);background:var(--noz-navy);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0"
+            >Appliquer</button>
+          </div>
+          <div id="sheet-url-current" style="margin-top:6px;font-size:10px;color:var(--text-muted);word-break:break-all"></div>
+        </div>
+      </div>
+
+            <!-- Module consignes -->
       <div>
         <div class="section-label" style="display:flex;align-items:center;justify-content:space-between">
           <span>Envoyer une consigne</span>
@@ -521,6 +549,7 @@
 
 <script src="data.js"></script>
 <script src="firebase.js"></script>
+<script src="sheets.js"></script>
 <script>
 // =============================================
 //  CONFIG
@@ -733,51 +762,7 @@ Vous pouvez me donner des consignes, signaler une absence, ou me demander d'ajus
 <strong>Que puis-je faire pour vous ?</strong>`;
 }
 
-// =============================================
-//  PLANNING OVERRIDE ENGINE
-//  Toutes les modifications sont stockées dans
-//  localStorage et appliquées par-dessus data.js
-// =============================================
 
-function getOverrides() {
-  try { return JSON.parse(localStorage.getItem(PLANNING_KEY) || '[]'); }
-  catch { return []; }
-}
-function saveOverrides(list) {
-  localStorage.setItem(PLANNING_KEY, JSON.stringify(list));
-}
-
-// Applique un override : { prenom, jourIdx, deb, fin, task, note }
-function applyOverride(ov) {
-  const list = getOverrides().filter(o => !(o.prenom === ov.prenom && o.jourIdx === ov.jourIdx));
-  list.push(ov);
-  saveOverrides(list);
-}
-
-function removeOverride(prenom, jourIdx) {
-  const list = getOverrides().filter(o => !(o.prenom === prenom && o.jourIdx === jourIdx));
-  saveOverrides(list);
-}
-
-// Retourne le planning effectif (data.js + overrides)
-function getEffectivePlanning() {
-  const overrides = getOverrides();
-  return STAFF.map(s => {
-    const shifts = s.shifts.map((sh, idx) => {
-      const ov = overrides.find(o => o.prenom === s.prenom && o.jourIdx === idx);
-      return ov ? { j: sh.j, deb: ov.deb, fin: ov.fin, task: ov.task } : sh;
-    });
-    return { ...s, shifts };
-  });
-}
-
-// Résume le planning d'une personne en texte court
-function resumeShifts(s) {
-  const labels = ['L','Ma','Me','J','V','Sa'];
-  return s.shifts.map((sh, i) =>
-    sh.deb ? `<b>${labels[i]}</b>:${sh.deb}h-${sh.fin}h` : `<b>${labels[i]}</b>:Repos`
-  ).join(' · ');
-}
 
 // =============================================
 //  MOTEUR D'INTENTIONS — Langage naturel
@@ -1131,6 +1116,28 @@ async function sendMessage() {
   input.value = '';
   input.style.height = 'auto';
 
+  // Détection automatique d'un lien Google Sheets
+  const sheetsMatch = text.match(/https:\/\/docs\.google\.com\/spreadsheets\/[^\s]+/);
+  if (sheetsMatch) {
+    let url = sheetsMatch[0];
+    if (url.includes('/pubhtml')) url = url.replace('/pubhtml', '/pub?output=csv');
+    if (!url.includes('output=csv')) url += (url.includes('?') ? '&' : '?') + 'output=csv';
+    showTyping(true);
+    setTimeout(async () => {
+      showTyping(false);
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        saveSheetURL(url);
+        renderSheetURLDisplay();
+        addBotMessage('\u2705 Nouveau planning Google Sheets enregistr\u00e9 et synchronis\u00e9 sur tous les appareils.<br><br>Le planning sera mis \u00e0 jour au prochain chargement de l\'application employ\u00e9.');
+      } catch(e) {
+        addBotMessage('\u274c Impossible d\'acc\u00e9der \u00e0 ce lien. V\u00e9rifiez que le sheet est bien publi\u00e9 sur le web :<br><br>Fichier \u2192 Partager \u2192 Publier sur le web \u2192 CSV \u2192 Publier.');
+      }
+    }, 600);
+    return;
+  }
+
   showTyping(true);
   const delay = 700 + Math.random() * 500;
   setTimeout(async () => {
@@ -1343,12 +1350,60 @@ function genererRecapPDF() {
 }
 
 // ——— INIT ————————————————————————————————
+// ——— GOOGLE SHEETS URL ————————————————————
+function renderSheetURLDisplay() {
+  const el = document.getElementById('sheet-url-current');
+  const inp = document.getElementById('sheet-url-input');
+  const status = document.getElementById('sheet-status');
+  if (!el) return;
+  const url = typeof getSheetURL === 'function' ? getSheetURL() : '';
+  if (url) {
+    const match = url.match(/\/d\/e\/([^/]+)\//);
+    const shortId = match ? match[1].slice(0, 20) + '\u2026' : url.slice(0, 40) + '\u2026';
+    el.textContent = 'URL active : ' + shortId;
+    if (status) status.textContent = '\u2705 Connect\u00e9';
+    if (inp) inp.placeholder = url;
+  } else {
+    el.textContent = 'Aucune URL configur\u00e9e';
+    if (status) status.textContent = '';
+  }
+}
+
+async function applyNewSheetURL() {
+  const inp = document.getElementById('sheet-url-input');
+  const status = document.getElementById('sheet-status');
+  let url = (inp?.value || '').trim();
+
+  // Convertir pubhtml → CSV si besoin
+  if (url.includes('/pubhtml')) url = url.replace('/pubhtml', '/pub?output=csv');
+  if (url && !url.includes('output=csv')) url += (url.includes('?') ? '&' : '?') + 'output=csv';
+
+  if (!url || !url.startsWith('https://docs.google.com/spreadsheets')) {
+    if (status) { status.textContent = '\u274c URL invalide'; setTimeout(() => renderSheetURLDisplay(), 2000); }
+    return;
+  }
+
+  if (status) status.textContent = '\u23f3 Test de connexion\u2026';
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    saveSheetURL(url);
+    if (inp) inp.value = '';
+    renderSheetURLDisplay();
+    addBotMessage('\u2705 URL du planning mise \u00e0 jour. Le nouveau sheet sera charg\u00e9 au prochain d\u00e9marrage de l\'application.<br><br>\ud83d\udca1 Dites-moi "<strong>recharger le planning</strong>" pour l\'appliquer maintenant.');
+  } catch(e) {
+    if (status) { status.textContent = '\u274c URL inaccessible'; setTimeout(() => renderSheetURLDisplay(), 3000); }
+    addBotMessage('\u274c Impossible d\'acc\u00e9der \u00e0 cette URL. V\u00e9rifiez que le sheet est bien publi\u00e9 sur le web (Fichier \u2192 Partager \u2192 Publier sur le web).');
+  }
+}
+
 async function boot() {
   await initFirebase();
   await syncGetOverrides();
   initAdminConsignesSelect();
   renderAdminConsignes();
   renderHistory();
+  renderSheetURLDisplay();
 }
 
 if (sessionStorage.getItem('noz_admin_auth') === '1') {

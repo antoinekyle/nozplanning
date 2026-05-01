@@ -1109,6 +1109,14 @@ function renderRecapJour() {
 
 /* ——— INIT ———————————————————————————————— */
 async function init() {
+  // Synchroniser l'URL du sheet depuis Firebase puis charger les données
+  if (typeof loadSheetURLFromFirebase === 'function') {
+    await loadSheetURLFromFirebase();
+  }
+  if (typeof fetchAndApplySheet === 'function') {
+    await fetchAndApplySheet();
+  }
+
   document.getElementById('week-badge').textContent = `Semaine ${SEMAINE.numero}`;
 
   buildNav();

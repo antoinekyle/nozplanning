@@ -42,7 +42,7 @@ const JOURS_DATES = {
 
 // deb/fin en décimal : 8.75 = 8h45, 13.75 = 13h45, 19.5 = 19h30
 // pause_deb / pause_fin : idem (null = pas de pause)
-const STAFF = [
+let STAFF = [
   {
     prenom:'Abdel',  totalSemaine:null, nom:'', role:'Gérant', contrat:39, pin:'1001',
     shifts:[
