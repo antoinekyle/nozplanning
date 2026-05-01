@@ -1132,11 +1132,12 @@ async function sendMessage() {
         // Détecter numéro de semaine et dates
         let weekNum = null, debut = null, fin = null;
         for (const line of text2.split('\n').slice(0, 20)) {
-          const cols = line.split(',');
-          if (cols[0].trim() === 'S :' && /^\d+$/.test((cols[1]||'').trim())) {
+          const cols = typeof parseCSVLine === 'function' ? parseCSVLine(line) : line.split(',');
+          const cell0 = (cols[0]||'').replace(/"/g,'').trim();
+          if (cell0 === 'S :' && /^\d+$/.test((cols[1]||'').trim())) {
             weekNum = parseInt(cols[1].trim());
-            const dp = (cols[2]||'').trim().split('/');
-            const fp = (cols[4]||'').trim().split('/');
+            const dp = (cols[2]||'').replace(/"/g,'').trim().split('/');
+            const fp = (cols[4]||'').replace(/"/g,'').trim().split('/');
             if (dp.length===3) debut = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
             if (fp.length===3) fin   = `${fp[2]}-${fp[1].padStart(2,'0')}-${fp[0].padStart(2,'0')}`;
             break;
@@ -1542,8 +1543,8 @@ async function saveWeekTab(num) {
 
     let debut = null, fin = null;
     for (const line of text.split('\n').slice(0, 20)) {
-      const cols = line.split(',');
-      if (cols[0].trim() === 'S :' && /^\d+$/.test((cols[1]||'').trim())) {
+      const cols = typeof parseCSVLine === 'function' ? parseCSVLine(line) : line.split(',');
+      if ((cols[0]||'').replace(/"/g,'').trim() === 'S :' && /^\d+$/.test((cols[1]||'').trim())) {
         const dp = (cols[2]||'').trim().split('/');
         const fp = (cols[4]||'').trim().split('/');
         if (dp.length===3) debut = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
@@ -1592,8 +1593,8 @@ async function addWeekFromURL() {
 
     let weekNum = null, debut = null, fin = null;
     for (const line of text.split('\n').slice(0, 20)) {
-      const cols = line.split(',');
-      if (cols[0].trim() === 'S :' && /^\d+$/.test((cols[1]||'').trim())) {
+      const cols = typeof parseCSVLine === 'function' ? parseCSVLine(line) : line.split(',');
+      if ((cols[0]||'').replace(/"/g,'').trim() === 'S :' && /^\d+$/.test((cols[1]||'').trim())) {
         weekNum = parseInt(cols[1].trim());
         const dp = (cols[2]||'').trim().split('/');
         const fp = (cols[4]||'').trim().split('/');

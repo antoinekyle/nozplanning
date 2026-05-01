@@ -1224,15 +1224,22 @@ async function init() {
     await loadSheetURLFromFirebase();
   }
 
+  // Nettoyer la semaine active si elle n'existe plus dans la liste
+  const _allWeeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
+  const _storedActive = typeof getActiveWeekNum === 'function' ? getActiveWeekNum() : null;
+  if (_storedActive && !_allWeeks[_storedActive]) {
+    // Semaine active périmée → la réinitialiser
+    localStorage.removeItem('noz_active_week');
+  }
+
   // Auto-sélectionner la semaine en cours selon la date
   if (typeof detectCurrentWeek === 'function') {
     const current = detectCurrentWeek();
     if (current && typeof setActiveWeekNum === 'function') {
       setActiveWeekNum(current);
     } else {
-      // Aucune semaine avec dates — prendre la première disponible
-      const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
-      const nums  = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
+      // Aucune semaine avec dates — prendre la plus récente disponible
+      const nums = Object.keys(_allWeeks).sort((a, b) => Number(a) - Number(b));
       if (nums.length > 0 && typeof setActiveWeekNum === 'function') setActiveWeekNum(nums[nums.length - 1]);
     }
   }

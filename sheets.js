@@ -62,12 +62,29 @@ function setActiveWeekNum(num) {
 }
 
 function getSheetURL() {
+  const weeks  = getAllWeeks();
   const active = getActiveWeekNum();
-  if (active) {
-    const weeks = getAllWeeks();
+
+  // Chercher d'abord la semaine active
+  if (active && weeks[active]) {
     const entry = weeks[active];
-    if (entry) return typeof entry === 'string' ? entry : entry.url;
+    const url = typeof entry === 'string' ? entry : entry.url;
+    if (url) return url;
   }
+
+  // Semaine active invalide ou absente → prendre la semaine la plus récente disponible
+  const nums = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
+  for (let i = nums.length - 1; i >= 0; i--) {
+    const entry = weeks[nums[i]];
+    const url = typeof entry === 'string' ? entry : (entry && entry.url);
+    if (url) {
+      // Mettre à jour la semaine active pour éviter ce problème au prochain chargement
+      setActiveWeekNum(nums[i]);
+      return url;
+    }
+  }
+
+  // Dernier recours : URL enregistrée manuellement ou valeur par défaut
   return localStorage.getItem(SHEET_URL_KEY) || SHEET_CSV_URL_DEFAULT;
 }
 
