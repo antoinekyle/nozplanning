@@ -1115,13 +1115,10 @@ function buildWeekBadge() {
   const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
   const nums  = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
 
-  badge.textContent = `Semaine ${SEMAINE.numero}`;
-
-  if (nums.length <= 1) return; // une seule semaine, pas de sélecteur
-
+  // Toujours afficher le numéro de semaine + flèche cliquable
   badge.style.cursor = 'pointer';
-  badge.title = 'Changer de semaine';
-  badge.innerHTML = `Semaine ${SEMAINE.numero} <span style="font-size:9px;opacity:.6">▼</span>`;
+  badge.title = nums.length > 1 ? 'Changer de semaine' : 'Actualiser le planning';
+  badge.innerHTML = `S${SEMAINE.numero} <span style="font-size:9px;opacity:.6">▼</span>`;
   badge.onclick = (e) => { e.stopPropagation(); toggleWeekPicker(badge, nums); };
 }
 
@@ -1138,24 +1135,44 @@ function toggleWeekPicker(badge, nums) {
     position:fixed;top:${rect.bottom + 6}px;right:12px;
     background:var(--bg-card);border:1px solid var(--border);
     border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);
-    z-index:9999;overflow:hidden;min-width:170px;
+    z-index:9999;overflow:hidden;min-width:180px;
   `;
 
-  nums.forEach(num => {
-    const isActive = num === active;
-    const btn = document.createElement('button');
-    btn.style.cssText = `
-      display:flex;align-items:center;justify-content:space-between;
-      width:100%;padding:12px 16px;border:none;
-      background:${isActive ? 'var(--noz-navy)' : 'transparent'};
-      color:${isActive ? '#fff' : 'var(--text)'};
-      font-size:14px;font-weight:${isActive ? '700' : '400'};
-      text-align:left;cursor:pointer;gap:12px;
-    `;
-    btn.innerHTML = `<span>Semaine ${num}</span>${isActive ? '<span style="font-size:11px">✓</span>' : ''}`;
-    btn.onclick = (e) => { e.stopPropagation(); switchWeek(num); };
-    picker.appendChild(btn);
-  });
+  if (nums.length === 0) {
+    // Aucune semaine sauvegardée — juste bouton actualiser
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:10px 14px;font-size:12px;color:var(--text-muted)';
+    div.textContent = 'Aucune semaine enregistrée';
+    picker.appendChild(div);
+  } else {
+    nums.forEach(num => {
+      const isActive = num === active;
+      const btn = document.createElement('button');
+      btn.style.cssText = `
+        display:flex;align-items:center;justify-content:space-between;
+        width:100%;padding:12px 16px;border:none;border-bottom:1px solid var(--border);
+        background:${isActive ? 'var(--noz-navy)' : 'transparent'};
+        color:${isActive ? '#fff' : 'var(--text)'};
+        font-size:14px;font-weight:${isActive ? '700' : '400'};
+        text-align:left;cursor:pointer;gap:12px;
+      `;
+      btn.innerHTML = `<span>Semaine ${num}</span>${isActive ? '<span style="font-size:11px">✓</span>' : ''}`;
+      btn.onclick = (e) => { e.stopPropagation(); switchWeek(num); };
+      picker.appendChild(btn);
+    });
+  }
+
+  // Bouton Actualiser toujours présent
+  const refreshBtn = document.createElement('button');
+  refreshBtn.style.cssText = `
+    display:flex;align-items:center;gap:8px;
+    width:100%;padding:10px 16px;border:none;
+    background:transparent;color:var(--text-light);
+    font-size:12px;text-align:left;cursor:pointer;
+  `;
+  refreshBtn.innerHTML = '🔄 Actualiser le planning';
+  refreshBtn.onclick = (e) => { e.stopPropagation(); picker.remove(); switchWeek(active || String(SEMAINE.numero)); };
+  picker.appendChild(refreshBtn);
 
   document.body.appendChild(picker);
   setTimeout(() => {
@@ -1194,16 +1211,27 @@ async function init() {
   if (typeof loadSheetURLFromFirebase === 'function') {
     await loadSheetURLFromFirebase();
   }
+
   // Auto-sélectionner la semaine en cours selon la date
   if (typeof detectCurrentWeek === 'function') {
     const current = detectCurrentWeek();
-    if (current && typeof setActiveWeekNum === 'function') setActiveWeekNum(current);
-  }
-  if (typeof fetchAndApplySheet === 'function') {
-    await fetchAndApplySheet();
+    if (current && typeof setActiveWeekNum === 'function') {
+      setActiveWeekNum(current);
+    } else {
+      // Aucune semaine avec dates — prendre la première disponible
+      const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
+      const nums  = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
+      if (nums.length > 0 && typeof setActiveWeekNum === 'function') setActiveWeekNum(nums[nums.length - 1]);
+    }
   }
 
-  document.getElementById('week-badge').textContent = `Semaine ${SEMAINE.numero}`;
+  // Charger le planning depuis Google Sheets
+  if (typeof fetchAndApplySheet === 'function') {
+    const ok = await fetchAndApplySheet();
+    if (!ok) console.warn('[NOZ] fetchAndApplySheet a échoué — données data.js utilisées');
+  }
+
+  document.getElementById('week-badge').textContent = `S${SEMAINE.numero}`;
 
   buildNav();
   buildWeekBadge();
