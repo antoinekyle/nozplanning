@@ -1487,7 +1487,7 @@ async function addWeekFromURL() {
     addBotMessage(`✅ <strong>Semaine ${weekNum}</strong>${dateStr} enregistrée.<br>Elle apparaîtra dans le sélecteur de l'application dès que les employés rechargent la page.`);
 
   } catch(e) {
-    if (status) status.textContent = '❌ Lien inaccessible — vérifiez qu'il est publié sur le web';
+    if (status) status.textContent = "❌ Lien inaccessible — vérifiez qu'il est publié sur le web";
     setTimeout(() => { if(status) status.textContent=''; }, 4000);
   }
 }
