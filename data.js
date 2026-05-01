@@ -136,8 +136,8 @@ let STAFF = [
     shifts:[
       { j:'Lun', deb:10,   fin:17.25, task:'Divers',  pause_deb:14,    pause_fin:15    },
       { j:'Mar', deb:9,    fin:19,    task:'Divers',  pause_deb:14,    pause_fin:15    },
-      { j:'Mer', deb:7,    fin:17.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
-      { j:'Jeu', deb:8.75, fin:18.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Mer', deb:7,    fin:19.5,  task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Jeu', deb:8.75, fin:17,    task:'Divers',  pause_deb:13,    pause_fin:14    },
       { j:'Ven', deb:9,    fin:13,    task:'Divers',  pause_deb:null, pause_fin:null  },
       { j:'Sam', deb:0,    fin:0,     task:null,      pause_deb:null,  pause_fin:null  },
     ],
@@ -147,8 +147,8 @@ let STAFF = [
     shifts:[
       { j:'Lun', deb:10,   fin:17.25, task:'Divers',  pause_deb:14,    pause_fin:15    },
       { j:'Mar', deb:9,    fin:19,    task:'Divers',  pause_deb:14,    pause_fin:15    },
-      { j:'Mer', deb:7,    fin:17.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
-      { j:'Jeu', deb:8.75, fin:18.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Mer', deb:7,    fin:19.5,  task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Jeu', deb:8.75, fin:17,    task:'Divers',  pause_deb:13,    pause_fin:14    },
       { j:'Ven', deb:9,    fin:13,    task:'Divers',  pause_deb:null, pause_fin:null  },
       { j:'Sam', deb:0,    fin:0,     task:null,      pause_deb:null,  pause_fin:null  },
     ],
@@ -158,8 +158,8 @@ let STAFF = [
     shifts:[
       { j:'Lun', deb:10,   fin:17.25, task:'Divers',  pause_deb:14,    pause_fin:15    },
       { j:'Mar', deb:9,    fin:19,    task:'Divers',  pause_deb:14,    pause_fin:15    },
-      { j:'Mer', deb:7,    fin:17.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
-      { j:'Jeu', deb:8.75, fin:18.75, task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Mer', deb:7,    fin:19.5,  task:'Divers',  pause_deb:13,    pause_fin:14    },
+      { j:'Jeu', deb:8.75, fin:17,    task:'Divers',  pause_deb:13,    pause_fin:14    },
       { j:'Ven', deb:9,    fin:13,    task:'Divers',  pause_deb:null, pause_fin:null  },
       { j:'Sam', deb:0,    fin:0,     task:null,      pause_deb:null,  pause_fin:null  },
     ],
