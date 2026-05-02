@@ -417,7 +417,9 @@ function buildCalendarPage() {
 }
 
 function initCalendar() {
-  let current = new Date(2026, 3, 1); // Avril 2026
+  // Initialiser sur le mois de la semaine active
+  const _debutCal = SEMAINE.debut ? new Date(SEMAINE.debut + 'T00:00:00') : new Date(2026, 3, 1);
+  let current = new Date(_debutCal.getFullYear(), _debutCal.getMonth(), 1);
 
   function render() {
     const title = document.getElementById('cal-title');
