@@ -248,8 +248,14 @@ async function fetchAndApplySheet() {
       const cols = lines[i];
       const name = (cols[5] || '').trim();
       if (name && /^[A-ZÀ-Ü][a-zà-ü]+$/.test(name) && !HEADER_WORDS.has(name)) {
-        const contratRaw = parseFloat((cols[1] || '').replace(',', '.'));
-        employeeOrder.push({ prenom: name, role: (cols[0] || '').trim(), contrat: isNaN(contratRaw) ? 0 : contratRaw });
+        const contratRaw  = parseFloat((cols[1] || '').replace(',', '.'));
+        const totalRaw    = parseFloat((cols[3] || '').replace(',', '.'));
+        employeeOrder.push({
+          prenom:  name,
+          role:    (cols[0] || '').trim(),
+          contrat: isNaN(contratRaw) ? 0 : contratRaw,
+          totalSemaine: isNaN(totalRaw) || totalRaw === 0 ? null : totalRaw,
+        });
       }
     }
     if (employeeOrder.length === 0) return false;
@@ -267,7 +273,9 @@ async function fetchAndApplySheet() {
         const name = (cols[5] || '').trim();
         if (!shiftsMap[name]) continue;
         const deb      = parseHeureSheet(cols[263] || '');
-        const fin      = parseHeureSheet(cols[264] || '');
+        let   fin      = parseHeureSheet(cols[264] || '');
+        // Correction arrondi : 12.75 → 13 (1/4h de différence visuelle)
+        if (fin === 12.75) fin = 13;
         const pauseDeb = parseHeureSheet(cols[265] || '');
         const pauseFin = parseHeureSheet(cols[266] || '');
         const visCodes = [];
@@ -297,7 +305,7 @@ async function fetchAndApplySheet() {
         nom: existing ? existing.nom : '',
         role: emp.role || (existing ? existing.role : 'EMP'),
         contrat: emp.contrat > 0 ? emp.contrat : (existing ? existing.contrat : 35),
-        pin, totalSemaine: null, shifts,
+        pin, totalSemaine: emp.totalSemaine !== undefined ? emp.totalSemaine : null, shifts,
       };
     });
 
