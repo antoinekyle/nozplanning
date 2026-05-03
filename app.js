@@ -456,10 +456,14 @@ function initCalendar() {
 
     // Build events map: iso date → [{prenom, color, task, deb, fin}]
     const eventsMap = {};
-    const weekDates = {
-      'Lun': '2026-04-13', 'Mar': '2026-04-14', 'Mer': '2026-04-15',
-      'Jeu': '2026-04-16', 'Ven': '2026-04-17', 'Sam': '2026-04-18', 'Dim': '2026-04-19',
-    };
+    // Calculer les dates de la semaine dynamiquement depuis SEMAINE.debut
+    const weekDates = {};
+    const _wd = new Date((SEMAINE.debut || '2026-05-04') + 'T00:00:00');
+    ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].forEach((j, i) => {
+      const d = new Date(_wd);
+      d.setDate(_wd.getDate() + i);
+      weekDates[j] = d.toISOString().split('T')[0];
+    });
     STAFF.forEach(s => {
       const rc = roleColor(s.role);
       s.shifts.forEach((sh, idx) => {
