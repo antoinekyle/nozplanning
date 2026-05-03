@@ -18,6 +18,7 @@ const TASKS = {
   'Caisses': { label: 'Caisses', color: '#F39C12' },
   'TDM':     { label: 'TDM',     color: '#00BCD4' },
   'Divers':  { label: 'Divers',  color: '#7D5A2E' },
+  'Ecole':   { label: 'École',   color: '#9B59B6' },
 };
 
 const ROLES = {

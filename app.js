@@ -78,7 +78,7 @@ function buildNav() {
     { id: 'global',    label: 'Planning global', icon: '📅' },
     { id: 'calendar',  label: 'Calendrier',      icon: '🗓' },
     ...STAFF.map((s, i) => ({ id: 'p' + i, label: s.prenom, staff: s })),
-    { id: 'pointage',  label: 'Pointage',         icon: '🕐' },
+    { id: 'heures',    label: 'Mes heures',        icon: '✏️' },
   ];
 
   tabs.forEach(tab => {
@@ -779,351 +779,182 @@ function clearAllConsignes() {
   showToast('Consignes effacées');
 }
 
-/* ——— POINTAGE ENGINE ————————————————————— */
+/* ——— SAISIE HEURES ——————————————————————— */
 
-const POINTAGE_KEY = 'noz_pointages';
+const HEURES_KEY = 'noz_heures_saisies';
 
-function getPointages() {
-  try { return JSON.parse(localStorage.getItem(POINTAGE_KEY) || '{}'); }
+function getHeuresSaisies() {
+  try { return JSON.parse(localStorage.getItem(HEURES_KEY) || '{}'); }
   catch { return {}; }
 }
-function savePointages(data) {
-  localStorage.setItem(POINTAGE_KEY, JSON.stringify(data));
-  if (typeof syncSaveOverride === 'function' && window._fbAvailable) {
-    fetch(`${window.FIREBASE_URL}/pointages.json`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    }).catch(() => {});
-  }
+function saveHeuresSaisies(data) {
+  localStorage.setItem(HEURES_KEY, JSON.stringify(data));
 }
 
-function todayKey() {
-  return new Date().toISOString().split('T')[0];
-}
-function nowTime() {
-  return new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-}
-function nowISO() { return new Date().toISOString(); }
-
-// Enregistre une arrivée ou un départ
-function enregistrerPointage(prenom, type) {
-  const data = getPointages();
-  const day  = todayKey();
-  if (!data[day]) data[day] = {};
-  if (!data[day][prenom]) data[day][prenom] = {};
-  data[day][prenom][type] = { time: nowTime(), iso: nowISO() };
-  savePointages(data);
+// "8h45" → "08:45" pour input type=time
+function toTimeInput(str) {
+  if (!str) return '';
+  const m = str.match(/^(\d{1,2})h(\d{2})$/);
+  if (m) return String(m[1]).padStart(2,'0') + ':' + m[2];
+  return '';
 }
 
-// Retourne le statut du jour pour une personne
-function getStatutJour(prenom) {
-  const data = getPointages();
-  const day  = todayKey();
-  return data[day]?.[prenom] || {};
+// "08:45" → minutes depuis minuit
+function timeToMin(str) {
+  if (!str) return 0;
+  const [h, m] = str.split(':').map(Number);
+  return h * 60 + m;
 }
 
-// Calcule la durée travaillée en minutes
-function dureeMinutes(arrivee, depart) {
-  if (!arrivee || !depart) return null;
-  const [ah, am] = arrivee.split(':').map(Number);
-  const [dh, dm] = depart.split(':').map(Number);
-  return (dh * 60 + dm) - (ah * 60 + am);
-}
+/* ——— PAGE SAISIE HEURES ————————————————— */
 
-// Détecte le retard en minutes
-function retardMinutes(prevuH, realTime) {
-  if (!realTime || !prevuH) return 0;
-  const [ph, pm] = [prevuH * 60, 0];
-  const [rh, rm] = realTime.split(':').map(Number);
-  const diff = (rh * 60 + rm) - (ph + pm);
-  return Math.max(0, diff);
-}
-
-/* ——— PAGE POINTAGE ——————————————————————— */
-
-let pinPointage = '';
-let pointagePersonne = null;
-
-function buildPointagePage() {
+function buildHeuresPage() {
   const pages = document.getElementById('pages');
   const div = document.createElement('div');
   div.className = 'page';
-  div.id = 'page-pointage';
+  div.id = 'page-heures';
 
   div.innerHTML = `
-    <div style="max-width:480px;margin:0 auto">
+    <div style="max-width:520px;margin:0 auto">
 
-      <!-- TITRE -->
       <div style="text-align:center;margin-bottom:20px">
-        <div style="font-size:22px;font-weight:700;color:var(--text)">🕐 Pointage</div>
-        <div style="font-size:13px;color:var(--text-muted);margin-top:4px" id="pointage-date"></div>
+        <div style="font-size:22px;font-weight:700;color:var(--text)">✏️ Mes heures</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-top:4px">S${SEMAINE.numero} — du ${SEMAINE.debut} au ${SEMAINE.fin}</div>
       </div>
 
-      <!-- PAVÉ PIN -->
-      <div id="pointage-pin-screen">
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;box-shadow:var(--shadow-sm);margin-bottom:16px">
-          <div style="font-size:13px;font-weight:600;color:var(--text-muted);text-align:center;margin-bottom:16px">
-            Entrez votre code PIN
-          </div>
-
-          <!-- Points PIN -->
-          <div style="display:flex;justify-content:center;gap:12px;margin-bottom:20px" id="pt-dots">
-            <div class="pt-dot" id="pt-d0"></div>
-            <div class="pt-dot" id="pt-d1"></div>
-            <div class="pt-dot" id="pt-d2"></div>
-            <div class="pt-dot" id="pt-d3"></div>
-          </div>
-
-          <!-- Pavé numérique -->
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-            ${[1,2,3,4,5,6,7,8,9,'','0','⌫'].map(n => `
-              <button class="pt-key" ${n==='' ? 'style="visibility:hidden"' : ''} data-v="${n}" onclick="ptKey('${n}')">
-                ${n}
-              </button>`).join('')}
-          </div>
-
-          <div id="pt-error" style="text-align:center;color:#dc2626;font-size:12px;font-weight:600;margin-top:12px;min-height:18px"></div>
-        </div>
+      <!-- Sélection employé -->
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px">
+        <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);display:block;margin-bottom:8px">Employé</label>
+        <select id="heures-select-emp" onchange="renderHeuresForm()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;background:var(--bg-card);color:var(--text);cursor:pointer">
+          <option value="">-- Sélectionner --</option>
+          ${STAFF.map(s => `<option value="${s.prenom}">${s.prenom}${s.nom ? ' ' + s.nom : ''}</option>`).join('')}
+        </select>
       </div>
 
-      <!-- ÉCRAN POINTAGE APRÈS IDENTIFICATION -->
-      <div id="pointage-action-screen" style="display:none">
-        <div style="background:var(--noz-navy);border-radius:var(--radius-lg);padding:20px;text-align:center;margin-bottom:16px;color:#fff">
-          <div id="pt-avatar" style="width:52px;height:52px;border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;border:2px solid rgba(255,255,255,0.3)"></div>
-          <div id="pt-name" style="font-size:18px;font-weight:700"></div>
-          <div id="pt-role" style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:2px"></div>
-          <div id="pt-shift-prevu" style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:6px"></div>
-        </div>
+      <!-- Formulaire jours -->
+      <div id="heures-form-zone"></div>
 
-        <!-- Statut actuel -->
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:10px">Pointages aujourd'hui</div>
-          <div id="pt-status-detail"></div>
-        </div>
-
-        <!-- Boutons pointage -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-          <button id="btn-arrivee" onclick="pointer('arrivee')" style="padding:16px;border:none;border-radius:var(--radius-md);background:#16a34a;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity 0.15s">
-            ✅ Arrivée
-          </button>
-          <button id="btn-depart" onclick="pointer('depart')" style="padding:16px;border:none;border-radius:var(--radius-md);background:#dc2626;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity 0.15s">
-            🚪 Départ
-          </button>
-        </div>
-
-        <button onclick="ptReset()" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--radius-md);background:none;color:var(--text-muted);cursor:pointer;font-size:13px">
-          ← Changer d'employé
+      <!-- Bouton sauvegarder -->
+      <div id="heures-save-zone" style="display:none;margin-top:16px">
+        <button onclick="sauvegarderHeures()" style="width:100%;padding:14px;border:none;border-radius:var(--radius-md);background:var(--noz-navy);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity 0.15s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+          💾 Enregistrer
         </button>
       </div>
 
-      <!-- RÉCAP DU JOUR -->
-      <div style="margin-top:20px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:8px">
-          Présences du jour
-        </div>
-        <div id="pointage-recap-jour" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden"></div>
+      <!-- Récap général -->
+      <div style="margin-top:24px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:8px">Récap semaine</div>
+        <div id="heures-recap" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden"></div>
       </div>
 
     </div>
   `;
 
   pages.appendChild(div);
-
-  // Styles PIN
-  if (!document.getElementById('pt-styles')) {
-    const style = document.createElement('style');
-    style.id = 'pt-styles';
-    style.textContent = `
-      .pt-dot { width:14px;height:14px;border-radius:50%;border:2px solid var(--border-md);transition:all 0.15s; }
-      .pt-dot.filled { background:var(--noz-navy);border-color:var(--noz-navy); }
-      .pt-dot.ok { background:#16a34a;border-color:#16a34a; }
-      .pt-dot.err { background:#dc2626;border-color:#dc2626;animation:ptShake 0.3s ease; }
-      @keyframes ptShake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
-      .pt-key {
-        padding:14px 0;font-size:20px;font-weight:600;
-        border:1px solid var(--border);border-radius:var(--radius-md);
-        background:var(--bg-card);color:var(--text);cursor:pointer;
-        transition:all 0.1s;
-      }
-      .pt-key:hover { background:var(--bg-muted); }
-      .pt-key:active { transform:scale(0.93);background:var(--noz-navy);color:#fff;border-color:var(--noz-navy); }
-    `;
-    document.head.appendChild(style);
-  }
-
-  // Init date
-  document.getElementById('pointage-date').textContent =
-    new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
-
-  renderRecapJour();
+  renderHeuresRecap();
 }
 
-function ptKey(v) {
-  if (v === '⌫') {
-    pinPointage = pinPointage.slice(0, -1);
-  } else if (pinPointage.length < 4) {
-    pinPointage += v;
-  }
-  updatePtDots();
-  document.getElementById('pt-error').textContent = '';
-  if (pinPointage.length === 4) setTimeout(checkPtPin, 150);
-}
+function renderHeuresForm() {
+  const prenom = document.getElementById('heures-select-emp')?.value;
+  const zone   = document.getElementById('heures-form-zone');
+  const saveZ  = document.getElementById('heures-save-zone');
+  if (!prenom || !zone) return;
 
-function updatePtDots(state) {
-  for (let i = 0; i < 4; i++) {
-    const d = document.getElementById('pt-d' + i);
-    d.className = 'pt-dot';
-    if (state === 'ok') d.classList.add('ok');
-    else if (state === 'err') d.classList.add('err');
-    else if (i < pinPointage.length) d.classList.add('filled');
-  }
-}
+  const s = STAFF.find(x => x.prenom === prenom);
+  if (!s) return;
 
-function checkPtPin() {
-  const personne = STAFF.find(s => s.pin === pinPointage);
-  if (personne) {
-    updatePtDots('ok');
-    setTimeout(() => showPointageAction(personne), 400);
-  } else {
-    updatePtDots('err');
-    document.getElementById('pt-error').textContent = 'Code incorrect';
-    setTimeout(() => {
-      pinPointage = '';
-      updatePtDots();
-    }, 800);
-  }
-}
+  const saisies = getHeuresSaisies();
+  const semKey  = `S${SEMAINE.numero}`;
+  const saved   = saisies[prenom]?.[semKey] || {};
 
-function showPointageAction(personne) {
-  pointagePersonne = personne;
-  document.getElementById('pointage-pin-screen').style.display = 'none';
-  document.getElementById('pointage-action-screen').style.display = 'block';
+  const jours = ['Lun','Mar','Mer','Jeu','Ven','Sam'];
+  const rows = jours.map((j, idx) => {
+    const sh   = s.shifts[idx] || {};
+    const repos = !sh.deb;
+    const defD = saved[j]?.deb || (repos ? '' : toTimeInput(fmtH(sh.deb)));
+    const defF = saved[j]?.fin || (repos ? '' : toTimeInput(fmtH(sh.fin)));
 
-  const rc = roleColor(personne.role);
-  const av = document.getElementById('pt-avatar');
-  av.textContent = initiales(personne);
-  av.style.background = rc;
+    return `
+      <div style="display:grid;grid-template-columns:90px 1fr 1fr;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${JOURS_FULL[j] || j}</div>
+        ${repos
+          ? `<div style="grid-column:2/4;font-size:12px;color:var(--text-muted);font-style:italic">Repos prévu</div>`
+          : `<input type="time" id="h-deb-${j}" value="${defD}"
+               style="padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--bg-card);color:var(--text);width:100%">
+             <input type="time" id="h-fin-${j}" value="${defF}"
+               style="padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--bg-card);color:var(--text);width:100%">`
+        }
+      </div>`;
+  }).join('');
 
-  document.getElementById('pt-name').textContent = personne.prenom + ' ' + personne.nom;
-  document.getElementById('pt-role').textContent = (ROLES[personne.role]?.label || personne.role) + ' · ' + personne.contrat + 'h/sem';
-
-  // Shift prévu aujourd'hui
-  const jourIdx = (new Date().getDay() + 6) % 7;
-  const sh = personne.shifts[jourIdx];
-  const prevuEl = document.getElementById('pt-shift-prevu');
-  if (sh?.deb) {
-    prevuEl.textContent = `Prévu aujourd'hui : ${fmtH(sh.deb)} → ${fmtH(sh.fin)}`;
-  } else {
-    prevuEl.textContent = 'Jour de repos';
-  }
-
-  renderPointageStatus(personne);
-}
-
-function renderPointageStatus(personne) {
-  const statut = getStatutJour(personne.prenom);
-  const el = document.getElementById('pt-status-detail');
-  const jourIdx = (new Date().getDay() + 6) % 7;
-  const sh = personne.shifts[jourIdx];
-
-  let html = '';
-  if (statut.arrivee) {
-    const retard = sh?.deb ? retardMinutes(sh.deb, statut.arrivee.time) : 0;
-    html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:16px">✅</span>
-      <div>
-        <div style="font-size:13px;font-weight:600;color:var(--text)">Arrivée : ${statut.arrivee.time}</div>
-        ${retard > 0 ? `<div style="font-size:11px;color:#dc2626">⚠️ ${retard} min de retard</div>` : '<div style="font-size:11px;color:#16a34a">À l\'heure ✓</div>'}
+  zone.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 20px">
+      <div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:10px;margin-bottom:6px">
+        <div></div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);text-align:center">Début</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);text-align:center">Fin</div>
       </div>
+      ${rows}
     </div>`;
-  } else {
-    html += `<div style="padding:6px 0;color:var(--text-muted);font-size:13px;border-bottom:1px solid var(--border)">⏳ Pas encore pointé l'arrivée</div>`;
-  }
 
-  if (statut.depart) {
-    const duree = dureeMinutes(statut.arrivee?.time, statut.depart.time);
-    html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0">
-      <span style="font-size:16px">🚪</span>
-      <div>
-        <div style="font-size:13px;font-weight:600;color:var(--text)">Départ : ${statut.depart.time}</div>
-        ${duree !== null ? `<div style="font-size:11px;color:var(--text-muted)">${Math.floor(duree/60)}h${String(duree%60).padStart(2,'0')} travaillées</div>` : ''}
-      </div>
-    </div>`;
-  } else {
-    html += `<div style="padding:6px 0;color:var(--text-muted);font-size:13px">⏳ Départ non pointé</div>`;
-  }
-
-  el.innerHTML = html;
-
-  // Activer/désactiver boutons
-  const btnA = document.getElementById('btn-arrivee');
-  const btnD = document.getElementById('btn-depart');
-  if (statut.arrivee) { btnA.style.opacity = '0.4'; btnA.style.cursor = 'not-allowed'; }
-  else { btnA.style.opacity = '1'; btnA.style.cursor = 'pointer'; }
-  if (!statut.arrivee || statut.depart) { btnD.style.opacity = '0.4'; btnD.style.cursor = 'not-allowed'; }
-  else { btnD.style.opacity = '1'; btnD.style.cursor = 'pointer'; }
+  saveZ.style.display = 'block';
 }
 
-function pointer(type) {
-  if (!pointagePersonne) return;
-  const statut = getStatutJour(pointagePersonne.prenom);
-  if (type === 'arrivee' && statut.arrivee) return;
-  if (type === 'depart' && (!statut.arrivee || statut.depart)) return;
+function sauvegarderHeures() {
+  const prenom = document.getElementById('heures-select-emp')?.value;
+  if (!prenom) return;
+  const s = STAFF.find(x => x.prenom === prenom);
+  if (!s) return;
 
-  enregistrerPointage(pointagePersonne.prenom, type);
-  const label = type === 'arrivee' ? 'Arrivée' : 'Départ';
-  showToast(`${label} enregistrée — ${nowTime()} ✓`);
-  renderPointageStatus(pointagePersonne);
-  renderRecapJour();
+  const saisies = getHeuresSaisies();
+  const semKey  = `S${SEMAINE.numero}`;
+  if (!saisies[prenom]) saisies[prenom] = {};
+  saisies[prenom][semKey] = {};
+
+  const jours = ['Lun','Mar','Mer','Jeu','Ven','Sam'];
+  jours.forEach((j, idx) => {
+    const sh  = s.shifts[idx] || {};
+    const dEl = document.getElementById('h-deb-' + j);
+    const fEl = document.getElementById('h-fin-' + j);
+    if (dEl && fEl && dEl.value && fEl.value) {
+      saisies[prenom][semKey][j] = { deb: dEl.value, fin: fEl.value };
+    }
+  });
+
+  saveHeuresSaisies(saisies);
+  showToast(`Heures de ${prenom} enregistrées ✓`);
+  renderHeuresRecap();
 }
 
-function ptReset() {
-  pinPointage = '';
-  pointagePersonne = null;
-  updatePtDots();
-  document.getElementById('pt-error').textContent = '';
-  document.getElementById('pointage-pin-screen').style.display = 'block';
-  document.getElementById('pointage-action-screen').style.display = 'none';
-}
-
-function renderRecapJour() {
-  const el = document.getElementById('pointage-recap-jour');
+function renderHeuresRecap() {
+  const el = document.getElementById('heures-recap');
   if (!el) return;
-  const data = getPointages();
-  const day  = todayKey();
-  const jourIdx = (new Date().getDay() + 6) % 7;
+  const saisies = getHeuresSaisies();
+  const semKey  = `S${SEMAINE.numero}`;
 
   const rows = STAFF.map(s => {
-    const sh = s.shifts[jourIdx];
-    if (!sh?.deb) return ''; // repos
-    const pt = data[day]?.[s.prenom] || {};
-    const retard = sh?.deb && pt.arrivee ? retardMinutes(sh.deb, pt.arrivee.time) : 0;
-    const duree = pt.arrivee && pt.depart ? dureeMinutes(pt.arrivee.time, pt.depart.time) : null;
-
-    let statut, couleur;
-    if (pt.depart)       { statut = '✅ Parti';       couleur = '#6b7280'; }
-    else if (pt.arrivee) { statut = '🟢 Présent';     couleur = '#16a34a'; }
-    else                 { statut = '⏳ Attendu';      couleur = '#f59e0b'; }
+    const saved = saisies[s.prenom]?.[semKey];
+    const total = saved
+      ? Object.values(saved).reduce((sum, x) => {
+          if (!x.deb || !x.fin) return sum;
+          return sum + timeToMin(x.fin) - timeToMin(x.deb);
+        }, 0)
+      : 0;
+    const hh = Math.floor(total / 60);
+    const mm = total % 60;
 
     return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
       <span style="width:30px;height:30px;border-radius:50%;background:${roleColor(s.role)};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${initiales(s)}</span>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600;color:var(--text)">${s.prenom}</div>
-        <div style="font-size:11px;color:var(--text-muted)">
-          Prévu : ${fmtH(sh.deb)}–${fmtH(sh.fin)}
-          ${pt.arrivee ? `· Arrivée : ${pt.arrivee.time}` : ''}
-          ${pt.depart  ? `· Départ : ${pt.depart.time}` : ''}
-          ${duree !== null ? `· <strong>${Math.floor(duree/60)}h${String(duree%60).padStart(2,'0')}</strong>` : ''}
-          ${retard > 0 ? `<span style="color:#dc2626">· ${retard}min retard</span>` : ''}
-        </div>
-      </div>
-      <span style="font-size:11px;font-weight:600;color:${couleur};flex-shrink:0">${statut}</span>
+      <div style="flex:1;font-size:13px;font-weight:600;color:var(--text)">${s.prenom}</div>
+      <span style="font-size:13px;font-weight:700;color:${saved ? 'var(--noz-navy)' : 'var(--text-muted)'}">
+        ${saved && total > 0 ? `${hh}h${String(mm).padStart(2,'0')}` : '—'}
+      </span>
     </div>`;
   }).join('');
 
-  el.innerHTML = rows || '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">Aucun employé prévu aujourd\'hui</div>';
+  el.innerHTML = rows || '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">Aucune saisie</div>';
 }
+
 
 /* ——— SÉLECTEUR DE SEMAINE ————————————————— */
 function buildWeekBadge() {
@@ -1213,7 +1044,7 @@ async function switchWeek(num) {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
-  buildPointagePage();
+  buildHeuresPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
   STAFF.forEach((s, i) => {
     const ct = document.getElementById('consigne-count-' + i);
@@ -1262,7 +1093,7 @@ async function init() {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
-  buildPointagePage();
+  buildHeuresPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
 
   STAFF.forEach((s, i) => {

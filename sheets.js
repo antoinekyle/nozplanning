@@ -118,6 +118,7 @@ const TASK_CODE_MAP = {
   '1': 'Pole1',
   '2': 'TDM',
   '3': 'Pole3',
+  '4': 'Ecole',
   '6': 'Divers',
   '7': 'Pole2',
   '8': 'Caisses',
