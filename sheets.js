@@ -275,8 +275,8 @@ async function fetchAndApplySheet() {
         if (!shiftsMap[name]) continue;
         const deb      = parseHeureSheet(cols[263] || '');
         let   fin      = parseHeureSheet(cols[264] || '');
-        // Correction arrondi : 12.75 → 13 (1/4h de différence visuelle)
-        if (fin === 12.75) fin = 13;
+        // La colonne stocke le début du dernier créneau de 15 min → +0.25 pour avoir la fin réelle
+        if (fin > 0) fin += 0.25;
         const pauseDeb = parseHeureSheet(cols[265] || '');
         const pauseFin = parseHeureSheet(cols[266] || '');
         const visCodes = [];
