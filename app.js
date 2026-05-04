@@ -78,7 +78,6 @@ function buildNav() {
     { id: 'global',    label: 'Planning global', icon: '📅' },
     { id: 'calendar',  label: 'Calendrier',      icon: '🗓' },
     ...STAFF.map((s, i) => ({ id: 'p' + i, label: s.prenom, staff: s })),
-    { id: 'heures',    label: 'Mes heures',        icon: '✏️' },
   ];
 
   tabs.forEach(tab => {
@@ -779,181 +778,7 @@ function clearAllConsignes() {
   showToast('Consignes effacées');
 }
 
-/* ——— SAISIE HEURES ——————————————————————— */
-
-const HEURES_KEY = 'noz_heures_saisies';
-
-function getHeuresSaisies() {
-  try { return JSON.parse(localStorage.getItem(HEURES_KEY) || '{}'); }
-  catch { return {}; }
-}
-function saveHeuresSaisies(data) {
-  localStorage.setItem(HEURES_KEY, JSON.stringify(data));
-}
-
-// "8h45" → "08:45" pour input type=time
-function toTimeInput(str) {
-  if (!str) return '';
-  const m = str.match(/^(\d{1,2})h(\d{2})$/);
-  if (m) return String(m[1]).padStart(2,'0') + ':' + m[2];
-  return '';
-}
-
-// "08:45" → minutes depuis minuit
-function timeToMin(str) {
-  if (!str) return 0;
-  const [h, m] = str.split(':').map(Number);
-  return h * 60 + m;
-}
-
-/* ——— PAGE SAISIE HEURES ————————————————— */
-
-function buildHeuresPage() {
-  const pages = document.getElementById('pages');
-  const div = document.createElement('div');
-  div.className = 'page';
-  div.id = 'page-heures';
-
-  div.innerHTML = `
-    <div style="max-width:520px;margin:0 auto">
-
-      <div style="text-align:center;margin-bottom:20px">
-        <div style="font-size:22px;font-weight:700;color:var(--text)">✏️ Mes heures</div>
-        <div style="font-size:13px;color:var(--text-muted);margin-top:4px">S${SEMAINE.numero} — du ${SEMAINE.debut} au ${SEMAINE.fin}</div>
-      </div>
-
-      <!-- Sélection employé -->
-      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px">
-        <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);display:block;margin-bottom:8px">Employé</label>
-        <select id="heures-select-emp" onchange="renderHeuresForm()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;background:var(--bg-card);color:var(--text);cursor:pointer">
-          <option value="">-- Sélectionner --</option>
-          ${STAFF.map(s => `<option value="${s.prenom}">${s.prenom}${s.nom ? ' ' + s.nom : ''}</option>`).join('')}
-        </select>
-      </div>
-
-      <!-- Formulaire jours -->
-      <div id="heures-form-zone"></div>
-
-      <!-- Bouton sauvegarder -->
-      <div id="heures-save-zone" style="display:none;margin-top:16px">
-        <button onclick="sauvegarderHeures()" style="width:100%;padding:14px;border:none;border-radius:var(--radius-md);background:var(--noz-navy);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity 0.15s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
-          💾 Enregistrer
-        </button>
-      </div>
-
-      <!-- Récap général -->
-      <div style="margin-top:24px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:8px">Récap semaine</div>
-        <div id="heures-recap" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden"></div>
-      </div>
-
-    </div>
-  `;
-
-  pages.appendChild(div);
-  renderHeuresRecap();
-}
-
-function renderHeuresForm() {
-  const prenom = document.getElementById('heures-select-emp')?.value;
-  const zone   = document.getElementById('heures-form-zone');
-  const saveZ  = document.getElementById('heures-save-zone');
-  if (!prenom || !zone) return;
-
-  const s = STAFF.find(x => x.prenom === prenom);
-  if (!s) return;
-
-  const saisies = getHeuresSaisies();
-  const semKey  = `S${SEMAINE.numero}`;
-  const saved   = saisies[prenom]?.[semKey] || {};
-
-  const jours = ['Lun','Mar','Mer','Jeu','Ven','Sam'];
-  const rows = jours.map((j, idx) => {
-    const sh   = s.shifts[idx] || {};
-    const repos = !sh.deb;
-    const defD = saved[j]?.deb || (repos ? '' : toTimeInput(fmtH(sh.deb)));
-    const defF = saved[j]?.fin || (repos ? '' : toTimeInput(fmtH(sh.fin)));
-
-    return `
-      <div style="display:grid;grid-template-columns:90px 1fr 1fr;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-        <div style="font-size:13px;font-weight:600;color:var(--text)">${JOURS_FULL[j] || j}</div>
-        ${repos
-          ? `<div style="grid-column:2/4;font-size:12px;color:var(--text-muted);font-style:italic">Repos prévu</div>`
-          : `<input type="time" id="h-deb-${j}" value="${defD}"
-               style="padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--bg-card);color:var(--text);width:100%">
-             <input type="time" id="h-fin-${j}" value="${defF}"
-               style="padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--bg-card);color:var(--text);width:100%">`
-        }
-      </div>`;
-  }).join('');
-
-  zone.innerHTML = `
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 20px">
-      <div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:10px;margin-bottom:6px">
-        <div></div>
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);text-align:center">Début</div>
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);text-align:center">Fin</div>
-      </div>
-      ${rows}
-    </div>`;
-
-  saveZ.style.display = 'block';
-}
-
-function sauvegarderHeures() {
-  const prenom = document.getElementById('heures-select-emp')?.value;
-  if (!prenom) return;
-  const s = STAFF.find(x => x.prenom === prenom);
-  if (!s) return;
-
-  const saisies = getHeuresSaisies();
-  const semKey  = `S${SEMAINE.numero}`;
-  if (!saisies[prenom]) saisies[prenom] = {};
-  saisies[prenom][semKey] = {};
-
-  const jours = ['Lun','Mar','Mer','Jeu','Ven','Sam'];
-  jours.forEach((j, idx) => {
-    const sh  = s.shifts[idx] || {};
-    const dEl = document.getElementById('h-deb-' + j);
-    const fEl = document.getElementById('h-fin-' + j);
-    if (dEl && fEl && dEl.value && fEl.value) {
-      saisies[prenom][semKey][j] = { deb: dEl.value, fin: fEl.value };
-    }
-  });
-
-  saveHeuresSaisies(saisies);
-  showToast(`Heures de ${prenom} enregistrées ✓`);
-  renderHeuresRecap();
-}
-
-function renderHeuresRecap() {
-  const el = document.getElementById('heures-recap');
-  if (!el) return;
-  const saisies = getHeuresSaisies();
-  const semKey  = `S${SEMAINE.numero}`;
-
-  const rows = STAFF.map(s => {
-    const saved = saisies[s.prenom]?.[semKey];
-    const total = saved
-      ? Object.values(saved).reduce((sum, x) => {
-          if (!x.deb || !x.fin) return sum;
-          return sum + timeToMin(x.fin) - timeToMin(x.deb);
-        }, 0)
-      : 0;
-    const hh = Math.floor(total / 60);
-    const mm = total % 60;
-
-    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
-      <span style="width:30px;height:30px;border-radius:50%;background:${roleColor(s.role)};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${initiales(s)}</span>
-      <div style="flex:1;font-size:13px;font-weight:600;color:var(--text)">${s.prenom}</div>
-      <span style="font-size:13px;font-weight:700;color:${saved ? 'var(--noz-navy)' : 'var(--text-muted)'}">
-        ${saved && total > 0 ? `${hh}h${String(mm).padStart(2,'0')}` : '—'}
-      </span>
-    </div>`;
-  }).join('');
-
-  el.innerHTML = rows || '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">Aucune saisie</div>';
-}
+/* ——— SÉLECTEUR DE SEMAINE (suite) ————————— */
 
 
 /* ——— SÉLECTEUR DE SEMAINE ————————————————— */
@@ -1044,7 +869,7 @@ async function switchWeek(num) {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
-  buildHeuresPage();
+
   STAFF.forEach((s, i) => buildPersonPage(s, i));
   STAFF.forEach((s, i) => {
     const ct = document.getElementById('consigne-count-' + i);
@@ -1093,7 +918,7 @@ async function init() {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
-  buildHeuresPage();
+
   STAFF.forEach((s, i) => buildPersonPage(s, i));
 
   STAFF.forEach((s, i) => {
