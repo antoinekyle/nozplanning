@@ -77,6 +77,7 @@ function buildNav() {
   const tabs = [
     { id: 'global',    label: 'Planning global', icon: '📅' },
     { id: 'calendar',  label: 'Calendrier',      icon: '🗓' },
+    { id: 'recap',     label: 'Récap mois',      icon: '📊' },
     ...STAFF.map((s, i) => ({ id: 'p' + i, label: s.prenom, staff: s })),
   ];
 
@@ -778,6 +779,171 @@ function clearAllConsignes() {
   showToast('Consignes effacées');
 }
 
+/* ——— RÉCAP MENSUEL ——————————————————————— */
+
+const RECAP_KEY = 'noz_recap_mensuel';
+
+function getRecapMensuel() {
+  try { return JSON.parse(localStorage.getItem(RECAP_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+// Appelée à chaque chargement de semaine — sauvegarde les heures
+function sauvegarderSemaineRecap() {
+  if (!SEMAINE.debut) return;
+  const moisKey = SEMAINE.debut.slice(0, 7); // "2026-05"
+  const semKey  = `S${SEMAINE.numero}`;
+  const recap   = getRecapMensuel();
+  if (!recap[moisKey]) recap[moisKey] = {};
+  recap[moisKey][semKey] = {
+    debut: SEMAINE.debut,
+    fin:   SEMAINE.fin,
+    heures: {}
+  };
+  STAFF.forEach(s => {
+    recap[moisKey][semKey].heures[s.prenom] = totalHeures(s);
+  });
+  localStorage.setItem(RECAP_KEY, JSON.stringify(recap));
+}
+
+function buildRecapPage() {
+  const pages = document.getElementById('pages');
+  const div   = document.createElement('div');
+  div.className = 'page';
+  div.id = 'page-recap';
+
+  // Lister les mois disponibles
+  const recap  = getRecapMensuel();
+  const moisDispo = Object.keys(recap).sort().reverse();
+  const moisFr = ['jan','fév','mar','avr','mai','juin','juil','aoû','sep','oct','nov','déc'];
+
+  function moisLabel(k) {
+    const [y, m] = k.split('-');
+    return moisFr[parseInt(m) - 1] + '. ' + y;
+  }
+
+  div.innerHTML = `
+    <div style="max-width:700px;margin:0 auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+        <div style="font-size:20px;font-weight:700;color:var(--text)">📊 Récap mensuel</div>
+        <select id="recap-mois-select" onchange="renderRecapTable()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--bg-card);color:var(--text);cursor:pointer">
+          ${moisDispo.length
+            ? moisDispo.map(m => `<option value="${m}">${moisLabel(m)}</option>`).join('')
+            : '<option value="">Aucune donnée</option>'
+          }
+        </select>
+      </div>
+      <div id="recap-table-zone"></div>
+      <div style="margin-top:12px;text-align:right">
+        <button onclick="imprimerRecap()" style="padding:8px 18px;border:1px solid var(--border);border-radius:var(--radius-sm);background:none;color:var(--text-muted);cursor:pointer;font-size:12px">🖨️ Imprimer</button>
+      </div>
+    </div>
+  `;
+
+  pages.appendChild(div);
+  if (moisDispo.length) renderRecapTable();
+}
+
+function renderRecapTable() {
+  const sel  = document.getElementById('recap-mois-select');
+  const zone = document.getElementById('recap-table-zone');
+  if (!sel || !zone) return;
+
+  const moisKey = sel.value;
+  const recap   = getRecapMensuel();
+  const semaines = recap[moisKey];
+  if (!semaines) { zone.innerHTML = '<p style="color:var(--text-muted)">Aucune donnée pour ce mois.</p>'; return; }
+
+  // Colonnes = semaines triées
+  const semKeys = Object.keys(semaines).sort((a, b) => {
+    const na = parseInt(a.replace('S',''));
+    const nb = parseInt(b.replace('S',''));
+    return na - nb;
+  });
+
+  // Lignes = tous les employés trouvés
+  const employes = [...new Set(semKeys.flatMap(sk => Object.keys(semaines[sk].heures)))];
+
+  // En-têtes
+  const thSems = semKeys.map(sk => {
+    const d = semaines[sk].debut || '';
+    const f = semaines[sk].fin   || '';
+    const label = d ? `${d.slice(8)}/${d.slice(5,7)}` : sk;
+    return `<th style="padding:8px 12px;text-align:center;background:var(--noz-navy);color:#fff;font-size:12px;white-space:nowrap">${sk}<br><span style="font-weight:400;opacity:.7;font-size:10px">${label}</span></th>`;
+  }).join('');
+
+  // Lignes employés
+  const rows = employes.map((prenom, ri) => {
+    const s      = STAFF.find(x => x.prenom === prenom);
+    const rc     = s ? roleColor(s.role) : '#888';
+    const ini    = s ? initiales(s) : prenom[0].toUpperCase();
+    const bg     = ri % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-muted)';
+
+    const cells = semKeys.map(sk => {
+      const h = semaines[sk].heures[prenom];
+      if (h === undefined || h === null) return `<td style="padding:8px 12px;text-align:center;background:${bg};color:var(--text-muted);font-size:13px">—</td>`;
+      const hh = Math.floor(h), mm = Math.round((h - hh) * 60);
+      const label = mm > 0 ? `${hh}h${String(mm).padStart(2,'0')}` : `${hh}h`;
+      const contrat = s ? s.contrat : 35;
+      const over = h > contrat;
+      const color = over ? '#dc2626' : h < contrat * 0.8 ? '#f59e0b' : 'var(--text)';
+      return `<td style="padding:8px 12px;text-align:center;background:${bg};font-size:13px;font-weight:600;color:${color}">${label}</td>`;
+    }).join('');
+
+    const total = semKeys.reduce((sum, sk) => sum + (semaines[sk].heures[prenom] || 0), 0);
+    const th = Math.floor(total), tm = Math.round((total - th) * 60);
+    const totalLabel = tm > 0 ? `${th}h${String(tm).padStart(2,'0')}` : `${th}h`;
+
+    return `<tr>
+      <td style="padding:8px 12px;background:${bg};white-space:nowrap">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="width:26px;height:26px;border-radius:50%;background:${rc};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">${ini}</span>
+          <span style="font-size:13px;font-weight:600;color:var(--text)">${prenom}</span>
+        </div>
+      </td>
+      ${cells}
+      <td style="padding:8px 12px;text-align:center;background:var(--noz-navy);color:#fff;font-size:13px;font-weight:700">${totalLabel}</td>
+    </tr>`;
+  }).join('');
+
+  // Ligne totaux par semaine
+  const totaux = semKeys.map(sk => {
+    const t = Object.values(semaines[sk].heures).reduce((s, h) => s + (h || 0), 0);
+    const hh = Math.floor(t), mm = Math.round((t - hh) * 60);
+    return `<td style="padding:8px 12px;text-align:center;background:#0D2240;color:#fff;font-size:12px;font-weight:700">${hh}h${String(mm).padStart(2,'0')}</td>`;
+  }).join('');
+
+  zone.innerHTML = `
+    <div style="overflow-x:auto;border-radius:var(--radius-md);border:1px solid var(--border)">
+      <table style="width:100%;border-collapse:collapse;min-width:400px">
+        <thead>
+          <tr>
+            <th style="padding:10px 12px;text-align:left;background:var(--noz-navy);color:#fff;font-size:12px">Employé</th>
+            ${thSems}
+            <th style="padding:10px 12px;text-align:center;background:var(--noz-navy);color:#fff;font-size:12px">Total mois</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr>
+            <td style="padding:8px 12px;background:#0D2240;color:#fff;font-size:12px;font-weight:700">Total équipe</td>
+            ${totaux}
+            <td style="background:#0D2240"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:var(--text-muted)">
+      🔴 Dépassement contrat &nbsp;|&nbsp; 🟡 &lt; 80% contrat &nbsp;|&nbsp; ⚫ Normal
+    </div>
+  `;
+}
+
+function imprimerRecap() {
+  showToast('Impression en cours…');
+  setTimeout(() => window.print(), 200);
+}
+
 /* ——— SÉLECTEUR DE SEMAINE (suite) ————————— */
 
 
@@ -865,11 +1031,12 @@ async function switchWeek(num) {
   document.getElementById('nav').innerHTML   = '';
   document.getElementById('pages').innerHTML = '';
 
+  sauvegarderSemaineRecap();
   buildNav();
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
-
+  buildRecapPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
   STAFF.forEach((s, i) => {
     const ct = document.getElementById('consigne-count-' + i);
@@ -914,11 +1081,12 @@ async function init() {
 
   document.getElementById('week-badge').textContent = `S${SEMAINE.numero}`;
 
+  sauvegarderSemaineRecap();
   buildNav();
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
-
+  buildRecapPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
 
   STAFF.forEach((s, i) => {
