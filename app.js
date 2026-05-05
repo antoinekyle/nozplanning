@@ -77,8 +77,8 @@ function buildNav() {
   const tabs = [
     { id: 'global',    label: 'Planning global', icon: '📅' },
     { id: 'calendar',  label: 'Calendrier',      icon: '🗓' },
-    { id: 'recap',     label: 'Récap mois',      icon: '📊' },
     ...STAFF.map((s, i) => ({ id: 'p' + i, label: s.prenom, staff: s })),
+    { id: 'admin',     label: 'Admin',           icon: '🔒' },
   ];
 
   tabs.forEach(tab => {
@@ -806,11 +806,11 @@ function sauvegarderSemaineRecap() {
   localStorage.setItem(RECAP_KEY, JSON.stringify(recap));
 }
 
-function buildRecapPage() {
+function buildAdminPage() {
   const pages = document.getElementById('pages');
   const div   = document.createElement('div');
   div.className = 'page';
-  div.id = 'page-recap';
+  div.id = 'page-admin';
 
   // Lister les mois disponibles
   const recap  = getRecapMensuel();
@@ -1036,7 +1036,7 @@ async function switchWeek(num) {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
-  buildRecapPage();
+  buildAdminPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
   STAFF.forEach((s, i) => {
     const ct = document.getElementById('consigne-count-' + i);
@@ -1086,7 +1086,7 @@ async function init() {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
-  buildRecapPage();
+  buildAdminPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
 
   STAFF.forEach((s, i) => {
