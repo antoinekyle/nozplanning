@@ -96,7 +96,10 @@ function buildNav() {
       btn.innerHTML = `<span style="font-size:15px;line-height:1">${tab.icon}</span> ${tab.label}`;
     }
 
-    btn.addEventListener('click', () => showPage(tab.id));
+    btn.addEventListener('click', () => {
+      if (tab.id === 'admin') { showAdminPage(); }
+      else showPage(tab.id);
+    });
 
     // Badge notification consignes sur onglet employé
     if (tab.staff) {
@@ -842,6 +845,83 @@ function sauvegarderSemaineRecap() {
   localStorage.setItem(RECAP_KEY, JSON.stringify(recap));
 }
 
+/* ——— PIN ADMIN ———————————————————————————— */
+const ADMIN_PIN = '0409';
+let _pinInput = '', _pinAttempts = 0, _pinLocked = false;
+
+function showAdminPage() {
+  if (sessionStorage.getItem('noz_admin_auth') === '1') {
+    showPage('admin');
+  } else {
+    showPage('admin-lock');
+  }
+}
+
+function buildAdminLockPage() {
+  const pages = document.getElementById('pages');
+  if (document.getElementById('page-admin-lock')) return;
+  const div = document.createElement('div');
+  div.className = 'page';
+  div.id = 'page-admin-lock';
+  div.innerHTML = `
+    <div style="min-height:80vh;display:flex;align-items:center;justify-content:center">
+      <div style="text-align:center;width:260px">
+        <div style="font-size:48px;margin-bottom:12px">🔒</div>
+        <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px">Espace gérant</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:24px">Entrez votre code PIN</div>
+        <div style="display:flex;justify-content:center;gap:12px;margin-bottom:24px">
+          ${[0,1,2,3].map(i => `<div id="adot${i}" style="width:14px;height:14px;border-radius:50%;border:2px solid var(--border);transition:background 0.15s"></div>`).join('')}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:8px">
+          ${[1,2,3,4,5,6,7,8,9].map(n => `<button onclick="adminPinPress('${n}')" style="height:54px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);font-size:20px;font-weight:600;cursor:pointer;transition:background 0.1s" onmouseover="this.style.background='var(--bg-muted)'" onmouseout="this.style.background='var(--bg-card)'">${n}</button>`).join('')}
+          <button style="visibility:hidden"></button>
+          <button onclick="adminPinPress('0')" style="height:54px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);font-size:20px;font-weight:600;cursor:pointer" onmouseover="this.style.background='var(--bg-muted)'" onmouseout="this.style.background='var(--bg-card)'">0</button>
+          <button onclick="adminPinDel()" style="height:54px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text-muted);font-size:16px;cursor:pointer" onmouseover="this.style.background='var(--bg-muted)'" onmouseout="this.style.background='var(--bg-card)'">⌫</button>
+        </div>
+        <div id="admin-lock-error" style="font-size:12px;color:#dc2626;min-height:18px;margin-top:6px"></div>
+      </div>
+    </div>
+  `;
+  pages.appendChild(div);
+}
+
+function adminPinUpdateDots() {
+  for (let i = 0; i < 4; i++) {
+    const d = document.getElementById('adot' + i);
+    if (!d) continue;
+    d.style.background = i < _pinInput.length ? 'var(--noz-navy)' : '';
+    d.style.borderColor = i < _pinInput.length ? 'var(--noz-navy)' : 'var(--border)';
+  }
+}
+
+function adminPinPress(v) {
+  if (_pinLocked || _pinInput.length >= 4) return;
+  _pinInput += v;
+  adminPinUpdateDots();
+  if (_pinInput.length === 4) setTimeout(adminPinCheck, 150);
+}
+
+function adminPinDel() {
+  _pinInput = _pinInput.slice(0, -1);
+  adminPinUpdateDots();
+  document.getElementById('admin-lock-error').textContent = '';
+}
+
+function adminPinCheck() {
+  if (_pinInput === ADMIN_PIN) {
+    sessionStorage.setItem('noz_admin_auth', '1');
+    _pinInput = ''; _pinAttempts = 0;
+    adminPinUpdateDots();
+    showPage('admin');
+  } else {
+    _pinAttempts++;
+    _pinInput = '';
+    adminPinUpdateDots();
+    const err = document.getElementById('admin-lock-error');
+    if (err) err.textContent = _pinAttempts >= 5 ? 'Trop de tentatives' : 'Code incorrect';
+  }
+}
+
 function buildAdminPage() {
   const pages = document.getElementById('pages');
   const div   = document.createElement('div');
@@ -888,8 +968,11 @@ function buildAdminPage() {
   div.innerHTML = `
     <div style="max-width:720px;margin:0 auto;padding-bottom:40px">
 
-      <!-- TITRE -->
-      <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:20px">🔒 Administration</div>
+      <!-- TITRE + VERROUILLER -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="font-size:20px;font-weight:700;color:var(--text)">🔒 Administration</div>
+        <button onclick="sessionStorage.removeItem('noz_admin_auth');showPage('admin-lock')" style="padding:7px 14px;border:1px solid var(--border);border-radius:8px;background:none;color:var(--text-muted);font-size:12px;cursor:pointer">🔒 Verrouiller</button>
+      </div>
 
       <!-- 6 BOUTONS RACCOURCIS -->
       <div class="admin-section-title">Accès rapide</div>
@@ -912,6 +995,17 @@ function buildAdminPage() {
         <button class="admin-btn" onclick="showPage('global')">
           <span class="admin-btn-icon">👥</span>Équipe S${SEMAINE.numero}
         </button>
+      </div>
+
+      <!-- PLANNING PAR SEMAINE -->
+      <div id="admin-semaines" style="margin-bottom:32px">
+        <div class="admin-section-title">📅 Planning par semaine</div>
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm)">
+          <!-- Onglets semaines -->
+          <div id="week-mgr-tabs" style="display:flex;overflow-x:auto;border-bottom:1px solid var(--border);background:var(--bg-muted);scrollbar-width:none"></div>
+          <!-- Contenu semaine sélectionnée -->
+          <div id="week-mgr-content" style="padding:18px"></div>
+        </div>
       </div>
 
       <!-- RÉCAP MENSUEL -->
@@ -1014,6 +1108,7 @@ function buildAdminPage() {
 
   pages.appendChild(div);
   if (moisDispo.length) renderRecapTable();
+  buildWeekManager();
 }
 
 function imprimerPlanning(type) {
@@ -1213,6 +1308,7 @@ async function switchWeek(num) {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
+  buildAdminLockPage();
   buildAdminPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
   STAFF.forEach((s, i) => {
@@ -1263,6 +1359,7 @@ async function init() {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
+  buildAdminLockPage();
   buildAdminPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
 
@@ -1292,6 +1389,141 @@ async function init() {
       }
     );
   }
+}
+
+/* ——— GESTIONNAIRE SEMAINES (Admin) ————————— */
+
+function buildWeekManager() {
+  renderWeekMgrTabs();
+}
+
+function renderWeekMgrTabs() {
+  const tabsEl   = document.getElementById('week-mgr-tabs');
+  const contentEl = document.getElementById('week-mgr-content');
+  if (!tabsEl || !contentEl) return;
+
+  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
+  const nums  = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
+  const active = String(typeof getActiveWeekNum === 'function' ? getActiveWeekNum() : SEMAINE.numero);
+
+  // Onglets
+  tabsEl.innerHTML = nums.map(num => {
+    const isActive = num === active;
+    const entry    = weeks[num];
+    const isCurrent = entry && entry.debut && entry.fin && (() => {
+      const today = new Date(); today.setHours(12,0,0,0);
+      return today >= new Date(entry.debut + 'T00:00:00') && today <= new Date(entry.fin + 'T23:59:59');
+    })();
+    return `<button onclick="weekMgrSelect('${num}')" style="
+      flex-shrink:0;padding:10px 16px;border:none;border-bottom:2px solid ${isActive ? 'var(--noz-navy)' : 'transparent'};
+      background:transparent;color:${isActive ? 'var(--noz-navy)' : 'var(--text-muted)'};
+      font-size:13px;font-weight:${isActive ? '700' : '500'};cursor:pointer;white-space:nowrap;
+      display:flex;align-items:center;gap:5px
+    ">S${num}${isCurrent ? '<span style="width:7px;height:7px;border-radius:50%;background:#16a34a;flex-shrink:0"></span>' : ''}</button>`;
+  }).join('') +
+  `<button onclick="weekMgrAdd()" style="
+    flex-shrink:0;padding:10px 14px;border:none;border-bottom:2px solid transparent;
+    background:transparent;color:var(--text-muted);font-size:18px;cursor:pointer
+  ">+</button>`;
+
+  // Contenu
+  if (nums.length === 0) {
+    contentEl.innerHTML = `<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:12px">Aucune semaine enregistrée.<br>Cliquez sur <b>+</b> pour en ajouter une.</div>`;
+    return;
+  }
+  const sel   = weeks[active] || weeks[nums[nums.length - 1]];
+  const selNum = weeks[active] ? active : nums[nums.length - 1];
+  const entry  = sel ? (typeof sel === 'string' ? { url: sel } : sel) : {};
+  const debut  = entry.debut || '';
+  const fin    = entry.fin   || '';
+  const url    = entry.url   || '';
+
+  const today = new Date(); today.setHours(12,0,0,0);
+  const isCurrent = debut && fin &&
+    today >= new Date(debut + 'T00:00:00') && today <= new Date(fin + 'T23:59:59');
+  const isUpcoming = debut && new Date(debut + 'T00:00:00') > today;
+
+  const statusBadge = isCurrent
+    ? `<span style="background:#dcfce7;color:#16a34a;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">En cours</span>`
+    : isUpcoming
+    ? `<span style="background:#fef9c3;color:#92400e;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">À venir</span>`
+    : `<span style="background:var(--bg-muted);color:var(--text-muted);font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">Passée</span>`;
+
+  const debutFr = debut ? debut.slice(8) + '/' + debut.slice(5,7) : '—';
+  const finFr   = fin   ? fin.slice(8)   + '/' + fin.slice(5,7)   : '—';
+
+  contentEl.innerHTML = `
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:17px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px">
+          Semaine ${selNum}
+          <span style="background:var(--noz-navy);color:#fff;font-size:10px;padding:2px 8px;border-radius:10px">ACTIVE</span>
+        </div>
+        <div style="font-size:13px;color:var(--text-muted);margin-top:3px">${debutFr} au ${finFr}</div>
+      </div>
+      ${statusBadge}
+    </div>
+
+    <div style="margin-bottom:10px">
+      <div style="font-size:11px;color:var(--text-muted);font-weight:500;margin-bottom:5px">Dates de la semaine</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="wm-debut" type="date" value="${debut}" style="flex:1;min-width:130px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--bg-muted);color:var(--text)">
+        <span style="align-self:center;color:var(--text-muted);font-size:13px">au</span>
+        <input id="wm-fin" type="date" value="${fin}" style="flex:1;min-width:130px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--bg-muted);color:var(--text)">
+      </div>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;color:var(--text-muted);font-weight:500;margin-bottom:5px">Lien Google Sheets (CSV) :</div>
+      <div style="display:flex;gap:8px">
+        <input id="wm-url" type="url" value="${escHtml(url)}" placeholder="https://docs.google.com/spreadsheets/…"
+          style="flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--bg-muted);color:var(--text);outline:none"
+          onfocus="this.style.borderColor='var(--noz-navy)'" onblur="this.style.borderColor='var(--border)'">
+        <button onclick="weekMgrSave('${selNum}')" style="padding:8px 18px;border:none;border-radius:8px;background:var(--noz-navy);color:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Enregistrer</button>
+      </div>
+    </div>
+
+    <button onclick="weekMgrDelete('${selNum}')" style="padding:7px 16px;border:1.5px solid #dc2626;border-radius:8px;background:none;color:#dc2626;font-size:13px;cursor:pointer">Supprimer</button>
+  `;
+}
+
+function weekMgrSelect(num) {
+  if (typeof setActiveWeekNum === 'function') setActiveWeekNum(num);
+  renderWeekMgrTabs();
+}
+
+function weekMgrAdd() {
+  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
+  const nums  = Object.keys(weeks).map(Number).sort((a,b) => a-b);
+  const next  = nums.length > 0 ? String(nums[nums.length - 1] + 1) : String(SEMAINE.numero + 1);
+  if (typeof saveWeekURL === 'function') saveWeekURL(next, '', '', '');
+  if (typeof setActiveWeekNum === 'function') setActiveWeekNum(next);
+  renderWeekMgrTabs();
+}
+
+function weekMgrSave(num) {
+  const url   = document.getElementById('wm-url')?.value.trim()   || '';
+  const debut = document.getElementById('wm-debut')?.value.trim() || '';
+  const fin   = document.getElementById('wm-fin')?.value.trim()   || '';
+  if (typeof saveWeekURL === 'function') saveWeekURL(num, url, debut, fin);
+  showToast('Semaine ' + num + ' enregistrée ✓');
+  renderWeekMgrTabs();
+  // Recharger le planning si c'est la semaine active
+  if (String(num) === String(SEMAINE.numero) && url) {
+    showSyncToast('Chargement…');
+    switchWeek(num);
+  }
+}
+
+function weekMgrDelete(num) {
+  if (!confirm('Supprimer la semaine ' + num + ' ?')) return;
+  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
+  delete weeks[num];
+  localStorage.setItem('noz_weeks', JSON.stringify(weeks));
+  const nums = Object.keys(weeks).sort((a,b) => Number(a)-Number(b));
+  if (typeof setActiveWeekNum === 'function') setActiveWeekNum(nums[nums.length - 1] || '');
+  renderWeekMgrTabs();
+  showToast('Semaine ' + num + ' supprimée');
 }
 
 document.addEventListener('DOMContentLoaded', init);
