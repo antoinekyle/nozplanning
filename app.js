@@ -79,6 +79,7 @@ function buildNav() {
     { id: 'calendar',  label: 'Calendrier',      icon: '🗓' },
     ...STAFF.map((s, i) => ({ id: 'p' + i, label: s.prenom, staff: s })),
     { id: 'admin',     label: 'Admin',           icon: '🔒' },
+
   ];
 
   tabs.forEach(tab => {
@@ -96,10 +97,7 @@ function buildNav() {
       btn.innerHTML = `<span style="font-size:15px;line-height:1">${tab.icon}</span> ${tab.label}`;
     }
 
-    btn.addEventListener('click', () => {
-      if (tab.id === 'admin') { showAdminPage(); }
-      else showPage(tab.id);
-    });
+    btn.addEventListener('click', () => showPage(tab.id));
 
     // Badge notification consignes sur onglet employé
     if (tab.staff) {
@@ -845,83 +843,6 @@ function sauvegarderSemaineRecap() {
   localStorage.setItem(RECAP_KEY, JSON.stringify(recap));
 }
 
-/* ——— PIN ADMIN ———————————————————————————— */
-const ADMIN_PIN = '0409';
-let _pinInput = '', _pinAttempts = 0, _pinLocked = false;
-
-function showAdminPage() {
-  if (sessionStorage.getItem('noz_admin_auth') === '1') {
-    showPage('admin');
-  } else {
-    showPage('admin-lock');
-  }
-}
-
-function buildAdminLockPage() {
-  const pages = document.getElementById('pages');
-  if (document.getElementById('page-admin-lock')) return;
-  const div = document.createElement('div');
-  div.className = 'page';
-  div.id = 'page-admin-lock';
-  div.innerHTML = `
-    <div style="min-height:80vh;display:flex;align-items:center;justify-content:center">
-      <div style="text-align:center;width:260px">
-        <div style="font-size:48px;margin-bottom:12px">🔒</div>
-        <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px">Espace gérant</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:24px">Entrez votre code PIN</div>
-        <div style="display:flex;justify-content:center;gap:12px;margin-bottom:24px">
-          ${[0,1,2,3].map(i => `<div id="adot${i}" style="width:14px;height:14px;border-radius:50%;border:2px solid var(--border);transition:background 0.15s"></div>`).join('')}
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:8px">
-          ${[1,2,3,4,5,6,7,8,9].map(n => `<button onclick="adminPinPress('${n}')" style="height:54px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);font-size:20px;font-weight:600;cursor:pointer;transition:background 0.1s" onmouseover="this.style.background='var(--bg-muted)'" onmouseout="this.style.background='var(--bg-card)'">${n}</button>`).join('')}
-          <button style="visibility:hidden"></button>
-          <button onclick="adminPinPress('0')" style="height:54px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);font-size:20px;font-weight:600;cursor:pointer" onmouseover="this.style.background='var(--bg-muted)'" onmouseout="this.style.background='var(--bg-card)'">0</button>
-          <button onclick="adminPinDel()" style="height:54px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text-muted);font-size:16px;cursor:pointer" onmouseover="this.style.background='var(--bg-muted)'" onmouseout="this.style.background='var(--bg-card)'">⌫</button>
-        </div>
-        <div id="admin-lock-error" style="font-size:12px;color:#dc2626;min-height:18px;margin-top:6px"></div>
-      </div>
-    </div>
-  `;
-  pages.appendChild(div);
-}
-
-function adminPinUpdateDots() {
-  for (let i = 0; i < 4; i++) {
-    const d = document.getElementById('adot' + i);
-    if (!d) continue;
-    d.style.background = i < _pinInput.length ? 'var(--noz-navy)' : '';
-    d.style.borderColor = i < _pinInput.length ? 'var(--noz-navy)' : 'var(--border)';
-  }
-}
-
-function adminPinPress(v) {
-  if (_pinLocked || _pinInput.length >= 4) return;
-  _pinInput += v;
-  adminPinUpdateDots();
-  if (_pinInput.length === 4) setTimeout(adminPinCheck, 150);
-}
-
-function adminPinDel() {
-  _pinInput = _pinInput.slice(0, -1);
-  adminPinUpdateDots();
-  document.getElementById('admin-lock-error').textContent = '';
-}
-
-function adminPinCheck() {
-  if (_pinInput === ADMIN_PIN) {
-    sessionStorage.setItem('noz_admin_auth', '1');
-    _pinInput = ''; _pinAttempts = 0;
-    adminPinUpdateDots();
-    showPage('admin');
-  } else {
-    _pinAttempts++;
-    _pinInput = '';
-    adminPinUpdateDots();
-    const err = document.getElementById('admin-lock-error');
-    if (err) err.textContent = _pinAttempts >= 5 ? 'Trop de tentatives' : 'Code incorrect';
-  }
-}
-
 function buildAdminPage() {
   const pages = document.getElementById('pages');
   const div   = document.createElement('div');
@@ -968,11 +889,8 @@ function buildAdminPage() {
   div.innerHTML = `
     <div style="max-width:720px;margin:0 auto;padding-bottom:40px">
 
-      <!-- TITRE + VERROUILLER -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-        <div style="font-size:20px;font-weight:700;color:var(--text)">🔒 Administration</div>
-        <button onclick="sessionStorage.removeItem('noz_admin_auth');showPage('admin-lock')" style="padding:7px 14px;border:1px solid var(--border);border-radius:8px;background:none;color:var(--text-muted);font-size:12px;cursor:pointer">🔒 Verrouiller</button>
-      </div>
+      <!-- TITRE -->
+      <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:20px">🔒 Administration</div>
 
       <!-- 6 BOUTONS RACCOURCIS -->
       <div class="admin-section-title">Accès rapide</div>
@@ -995,36 +913,6 @@ function buildAdminPage() {
         <button class="admin-btn" onclick="showPage('global')">
           <span class="admin-btn-icon">👥</span>Équipe S${SEMAINE.numero}
         </button>
-      </div>
-
-      <!-- IMPORT EXCEL -->
-      <div id="admin-import" style="margin-bottom:28px">
-        <div class="admin-section-title">📂 Importer un fichier Excel</div>
-        <div style="background:var(--bg-card);border:2px dashed var(--border);border-radius:var(--radius-lg);padding:24px;text-align:center;transition:border-color 0.2s"
-          id="drop-zone"
-          ondragover="event.preventDefault();this.style.borderColor='var(--noz-navy)'"
-          ondragleave="this.style.borderColor='var(--border)'"
-          ondrop="handleExcelDrop(event)">
-          <div style="font-size:32px;margin-bottom:8px">📊</div>
-          <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">Glissez votre fichier Excel ici</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">ou cliquez pour sélectionner (.xlsx)</div>
-          <label style="padding:9px 20px;background:var(--noz-navy);color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
-            Choisir un fichier
-            <input type="file" accept=".xlsx,.xls" style="display:none" onchange="handleExcelFile(this.files[0])">
-          </label>
-        </div>
-        <div id="import-status" style="margin-top:10px;font-size:13px;min-height:20px"></div>
-      </div>
-
-      <!-- PLANNING PAR SEMAINE -->
-      <div id="admin-semaines" style="margin-bottom:32px">
-        <div class="admin-section-title">📅 Planning par semaine</div>
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm)">
-          <!-- Onglets semaines -->
-          <div id="week-mgr-tabs" style="display:flex;overflow-x:auto;border-bottom:1px solid var(--border);background:var(--bg-muted);scrollbar-width:none"></div>
-          <!-- Contenu semaine sélectionnée -->
-          <div id="week-mgr-content" style="padding:18px"></div>
-        </div>
       </div>
 
       <!-- RÉCAP MENSUEL -->
@@ -1127,7 +1015,6 @@ function buildAdminPage() {
 
   pages.appendChild(div);
   if (moisDispo.length) renderRecapTable();
-  buildWeekManager();
 }
 
 function imprimerPlanning(type) {
@@ -1235,8 +1122,6 @@ function imprimerRecap() {
   setTimeout(() => window.print(), 200);
 }
 
-/* ——— SÉLECTEUR DE SEMAINE (suite) ————————— */
-
 
 /* ——— SÉLECTEUR DE SEMAINE ————————————————— */
 function buildWeekBadge() {
@@ -1316,7 +1201,6 @@ async function switchWeek(num) {
   if (typeof setActiveWeekNum === 'function') setActiveWeekNum(num);
   showSyncToast(`Chargement semaine ${num}…`);
 
-  loadStaffOverride();
   if (typeof fetchAndApplySheet === 'function') await fetchAndApplySheet();
 
   // Reconstruire toute l'interface
@@ -1328,7 +1212,6 @@ async function switchWeek(num) {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
-  buildAdminLockPage();
   buildAdminPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
   STAFF.forEach((s, i) => {
@@ -1366,9 +1249,6 @@ async function init() {
     }
   }
 
-  // Charger les données Excel importées (priorité sur data.js)
-  loadStaffOverride();
-
   // Charger le planning depuis Google Sheets
   if (typeof fetchAndApplySheet === 'function') {
     const ok = await fetchAndApplySheet();
@@ -1382,7 +1262,6 @@ async function init() {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
-  buildAdminLockPage();
   buildAdminPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
 
@@ -1412,405 +1291,6 @@ async function init() {
       }
     );
   }
-}
-
-/* ——— IMPORT EXCEL ——————————————————————————— */
-
-function handleExcelDrop(e) {
-  e.preventDefault();
-  document.getElementById('drop-zone').style.borderColor = 'var(--border)';
-  const file = e.dataTransfer?.files[0];
-  if (file) handleExcelFile(file);
-}
-
-async function handleExcelFile(file) {
-  if (!file) return;
-  const status = document.getElementById('import-status');
-  if (status) status.innerHTML = '<span style="color:var(--text-muted)">⏳ Lecture du fichier…</span>';
-
-  try {
-    const data = await file.arrayBuffer();
-    const wb   = XLSX.read(data, { type: 'array' });
-
-    // ——— Chercher les feuilles MATRICE et INDIVIDUEL ———
-    const matNom = wb.SheetNames.find(n => n.toUpperCase().includes('MATRICE'));
-    const indNom = wb.SheetNames.find(n => n.toUpperCase().includes('INDIVIDUEL'));
-
-    if (!matNom && !indNom) {
-      if (status) status.innerHTML = '<span style="color:#dc2626">❌ Feuilles MATRICE et INDIVIDUEL introuvables dans ce fichier.</span>';
-      return;
-    }
-
-    let newStaff = null;
-    if (matNom && indNom) {
-      newStaff = parseExcelPlanning(wb, matNom, indNom);
-    } else if (indNom) {
-      newStaff = parseIndividuelOnly(wb, indNom);
-    }
-
-    if (!newStaff || newStaff.length === 0) {
-      if (status) status.innerHTML = '<span style="color:#dc2626">❌ Aucun employé trouvé. Vérifiez la structure du fichier.</span>';
-      return;
-    }
-
-    // Appliquer + sauvegarder en localStorage
-    STAFF.length = 0;
-    STAFF.push(...newStaff);
-    localStorage.setItem('noz_staff_override', JSON.stringify(newStaff));
-    sauvegarderSemaineRecap();
-
-    // Reconstruire l'interface
-    document.getElementById('nav').innerHTML   = '';
-    document.getElementById('pages').innerHTML = '';
-    buildNav(); buildWeekBadge(); buildGlobalPage(); buildCalendarPage();
-    buildAdminLockPage(); buildAdminPage();
-    STAFF.forEach((s, i) => buildPersonPage(s, i));
-    STAFF.forEach((s, i) => renderConsignesFor(s.prenom, null, document.getElementById('consigne-count-' + i)));
-    showPage('admin');
-
-    if (status) status.innerHTML = `<span style="color:#16a34a">✅ ${newStaff.length} employés importés depuis <b>${file.name}</b></span>`;
-
-  } catch (err) {
-    console.error('[Import Excel]', err);
-    if (status) status.innerHTML = '<span style="color:#dc2626">❌ Erreur de lecture : ' + err.message + '</span>';
-  }
-}
-
-function parseExcelPlanning(wb, matNom, indNom) {
-  const matSheet = wb.Sheets[matNom];
-  const indSheet = wb.Sheets[indNom];
-  const matData  = XLSX.utils.sheet_to_json(matSheet, { header: 1, defval: '' });
-  const indData  = XLSX.utils.sheet_to_json(indSheet, { header: 1, defval: '' });
-
-  // ——— 1. Infos semaine depuis MATRICE ———
-  for (const row of matData) {
-    if (String(row[0]).trim() === 'S :' && /^\d+$/.test(String(row[1] || '').trim())) {
-      SEMAINE.numero = parseInt(row[1]);
-      const debut = parseDateFr(String(row[2] || ''));
-      const fin   = parseDateFr(String(row[4] || ''));
-      if (debut) { SEMAINE.debut = debut; Object.assign(JOURS_DATES, calcJoursDates(debut)); }
-      if (fin)   SEMAINE.fin = fin;
-      break;
-    }
-  }
-
-  // ——— 2. Lire INDIVIDUEL pour les horaires ———
-  // Structure attendue : colonnes A=Prénom, puis jours avec deb/fin
-  const staffHours = parseIndividuelSheet(indData);
-
-  // ——— 3. Lire MATRICE pour les tâches ———
-  const staffTasks = parseMatriceTasks(matData);
-
-  // ——— 4. Fusionner ———
-  const prenoms = Object.keys(staffHours).length > 0 ? Object.keys(staffHours) : Object.keys(staffTasks);
-  const JOURS_KEYS = ['Lun','Mar','Mer','Jeu','Ven','Sam'];
-
-  return prenoms.map((prenom, idx) => {
-    const existing = STAFF.find(s => s.prenom === prenom);
-    const hours    = staffHours[prenom]  || {};
-    const tasks    = staffTasks[prenom]  || {};
-    const shifts   = JOURS_KEYS.map((j, i) => {
-      const h = hours[i]  || { deb: 0, fin: 0, pause_deb: null, pause_fin: null };
-      const t = tasks[i]  || null;
-      return { j, deb: h.deb, fin: h.fin, task: h.deb ? (t || existing?.shifts[i]?.task || null) : null, pause_deb: h.pause_deb, pause_fin: h.pause_fin };
-    });
-    const totalSemaine = shifts.reduce((s, sh) => {
-      if (!sh.deb) return s;
-      const brut  = sh.fin - sh.deb;
-      const pause = sh.pause_deb && sh.pause_fin ? sh.pause_fin - sh.pause_deb : 0;
-      return s + brut - pause;
-    }, 0);
-    return {
-      prenom,
-      nom:    existing?.nom    || '',
-      role:   existing?.role   || 'EMP',
-      contrat:existing?.contrat|| 35,
-      pin:    existing?.pin    || String(1000 + idx + 1),
-      totalSemaine: Math.round(totalSemaine * 4) / 4,
-      shifts,
-    };
-  });
-}
-
-function parseIndividuelSheet(rows) {
-  // Cherche les blocs : ligne "Prénom" puis lignes employés avec deb/fin par jour
-  const result = {};
-  const JOURS_FR = ['LUNDI','MARDI','MERCREDI','JEUDI','VENDREDI','SAMEDI'];
-  let colMap = {}; // jourIdx → colonne deb
-
-  for (let r = 0; r < rows.length; r++) {
-    const row = rows[r];
-    // Chercher la ligne d'en-tête avec les jours
-    const rowUpper = row.map(c => String(c).trim().toUpperCase());
-    const hasJour  = JOURS_FR.some(j => rowUpper.includes(j));
-    if (hasJour) {
-      colMap = {};
-      JOURS_FR.forEach((j, i) => {
-        const col = rowUpper.indexOf(j);
-        if (col >= 0) colMap[i] = col;
-      });
-      continue;
-    }
-    // Ligne employé : prénom en colonne basse + horaires
-    const prenom = String(row[0] || row[1] || '').trim();
-    if (!prenom || /^(prénom|nom|total|contrat)/i.test(prenom)) continue;
-    if (!/^[A-ZÀ-Ü][a-zà-ü]/.test(prenom)) continue;
-
-    if (!result[prenom]) result[prenom] = {};
-    Object.entries(colMap).forEach(([jourIdx, col]) => {
-      const debRaw = String(row[col]     || '').trim();
-      const finRaw = String(row[col + 1] || '').trim();
-      const pauseDebRaw = String(row[col + 2] || '').trim();
-      const pauseFinRaw = String(row[col + 3] || '').trim();
-      const deb = parseHeureExcel(debRaw);
-      const fin = parseHeureExcel(finRaw);
-      if (deb > 0) {
-        result[prenom][parseInt(jourIdx)] = {
-          deb, fin,
-          pause_deb: parseHeureExcel(pauseDebRaw) || null,
-          pause_fin: parseHeureExcel(pauseFinRaw) || null,
-        };
-      }
-    });
-  }
-  return result;
-}
-
-function parseMatriceTasks(rows) {
-  const result = {};
-  const TASK_MAP = { '1':'Pole1','2':'TDM','3':'Pole3','4':'Ecole','5':'Divers','6':'Divers','7':'Pole2','8':'Caisses','9':'Divers','10':'Divers' };
-  const JOUR_NOMS = { 'LUNDI':0,'MARDI':1,'MERCREDI':2,'JEUDI':3,'VENDREDI':4,'SAMEDI':5 };
-
-  // Trouver les blocs journaliers (lignes "S :")
-  const blocks = [];
-  for (let i = 0; i < rows.length; i++) {
-    if (String(rows[i][0]).trim() !== 'S :') continue;
-    for (let k = 5; k < Math.min(rows[i].length, 15); k++) {
-      const v = String(rows[i][k] || '').trim().toUpperCase();
-      if (v in JOUR_NOMS) { blocks.push({ jourIdx: JOUR_NOMS[v], startLine: i }); break; }
-    }
-  }
-
-  for (let b = 0; b < blocks.length; b++) {
-    const { jourIdx, startLine } = blocks[b];
-    if (jourIdx >= 6) continue;
-    const endLine = blocks[b+1] ? blocks[b+1].startLine : rows.length;
-    for (let i = startLine + 1; i < endLine; i++) {
-      const row    = rows[i];
-      const prenom = String(row[5] || '').trim();
-      if (!prenom || !/^[A-ZÀ-Ü][a-zà-ü]/.test(prenom)) continue;
-      if (!result[prenom]) result[prenom] = {};
-      // Codes tâche dans colonnes I:JB (indices 8 à 262)
-      const codes = [];
-      for (let c = 8; c < Math.min(row.length, 263); c++) {
-        const v = String(row[c] || '').trim();
-        if (/^\d+$/.test(v) && v !== '0') codes.push(v);
-      }
-      // Mode (valeur la plus fréquente)
-      const count = {};
-      let best = null, max = 0;
-      for (const v of codes) { count[v] = (count[v]||0)+1; if (count[v]>max) { max=count[v]; best=v; } }
-      if (best) result[prenom][jourIdx] = TASK_MAP[best] || null;
-    }
-  }
-  return result;
-}
-
-function parseIndividuelOnly(wb, indNom) {
-  const indData = XLSX.utils.sheet_to_json(wb.Sheets[indNom], { header: 1, defval: '' });
-  const hours   = parseIndividuelSheet(indData);
-  const JOURS_KEYS = ['Lun','Mar','Mer','Jeu','Ven','Sam'];
-  return Object.keys(hours).map((prenom, idx) => {
-    const existing = STAFF.find(s => s.prenom === prenom);
-    const shifts   = JOURS_KEYS.map((j, i) => {
-      const h = hours[prenom][i] || { deb: 0, fin: 0, pause_deb: null, pause_fin: null };
-      return { j, deb: h.deb, fin: h.fin, task: existing?.shifts[i]?.task || null, pause_deb: h.pause_deb, pause_fin: h.pause_fin };
-    });
-    const total = shifts.reduce((s, sh) => {
-      if (!sh.deb) return s;
-      return s + (sh.fin - sh.deb) - (sh.pause_deb && sh.pause_fin ? sh.pause_fin - sh.pause_deb : 0);
-    }, 0);
-    return { prenom, nom: existing?.nom||'', role: existing?.role||'EMP', contrat: existing?.contrat||35, pin: existing?.pin||String(1000+idx+1), totalSemaine: Math.round(total*4)/4, shifts };
-  });
-}
-
-function parseHeureExcel(str) {
-  if (!str || str === '0' || str === '-' || str === 'R') return 0;
-  str = String(str).trim().replace(',', '.');
-  // Format "8h45" ou "8H45"
-  const hm = str.match(/^(\d{1,2})[hH](\d{0,2})$/);
-  if (hm) return parseInt(hm[1]) + (parseInt(hm[2]||'0')/60);
-  // Format "8:45"
-  const hc = str.match(/^(\d{1,2}):(\d{2})$/);
-  if (hc) return parseInt(hc[1]) + parseInt(hc[2])/60;
-  // Nombre décimal (fraction Excel : 0.375 = 9h00)
-  const n = parseFloat(str);
-  if (!isNaN(n) && n > 0 && n < 1) return Math.round(n * 24 * 4) / 4; // fraction de jour → heures
-  if (!isNaN(n) && n >= 1) return n;
-  return 0;
-}
-
-function parseDateFr(str) {
-  if (!str) return null;
-  const parts = str.trim().split('/');
-  if (parts.length !== 3) return null;
-  const [d, m, y] = parts.map(Number);
-  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-}
-
-// Charger les données importées si présentes en localStorage
-function loadStaffOverride() {
-  try {
-    const saved = localStorage.getItem('noz_staff_override');
-    if (saved) {
-      const data = JSON.parse(saved);
-      if (Array.isArray(data) && data.length > 0) {
-        STAFF.length = 0;
-        STAFF.push(...data);
-        return true;
-      }
-    }
-  } catch {}
-  return false;
-}
-
-/* ——— GESTIONNAIRE SEMAINES (Admin) ————————— */
-
-let _weekMgrSelected = null; // onglet sélectionné dans le manager (indépendant du planning affiché)
-
-function buildWeekManager() {
-  // Initialiser sur la semaine active ou la plus récente
-  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
-  const nums  = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
-  _weekMgrSelected = String(SEMAINE.numero);
-  if (!weeks[_weekMgrSelected] && nums.length > 0) _weekMgrSelected = nums[nums.length - 1];
-  renderWeekMgrTabs();
-}
-
-function renderWeekMgrTabs() {
-  const tabsEl   = document.getElementById('week-mgr-tabs');
-  const contentEl = document.getElementById('week-mgr-content');
-  if (!tabsEl || !contentEl) return;
-
-  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
-  const nums  = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
-  const active = _weekMgrSelected || String(SEMAINE.numero);
-
-  // Onglets
-  tabsEl.innerHTML = nums.map(num => {
-    const isActive = num === active;
-    const entry    = weeks[num];
-    const isCurrent = entry && entry.debut && entry.fin && (() => {
-      const today = new Date(); today.setHours(12,0,0,0);
-      return today >= new Date(entry.debut + 'T00:00:00') && today <= new Date(entry.fin + 'T23:59:59');
-    })();
-    return `<button onclick="weekMgrSelect('${num}')" style="
-      flex-shrink:0;padding:10px 16px;border:none;border-bottom:2px solid ${isActive ? 'var(--noz-navy)' : 'transparent'};
-      background:transparent;color:${isActive ? 'var(--noz-navy)' : 'var(--text-muted)'};
-      font-size:13px;font-weight:${isActive ? '700' : '500'};cursor:pointer;white-space:nowrap;
-      display:flex;align-items:center;gap:5px
-    ">S${num}${isCurrent ? '<span style="width:7px;height:7px;border-radius:50%;background:#16a34a;flex-shrink:0"></span>' : ''}</button>`;
-  }).join('') +
-  `<button onclick="weekMgrAdd()" style="
-    flex-shrink:0;padding:10px 14px;border:none;border-bottom:2px solid transparent;
-    background:transparent;color:var(--text-muted);font-size:18px;cursor:pointer
-  ">+</button>`;
-
-  // Contenu
-  if (nums.length === 0) {
-    contentEl.innerHTML = `<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:12px">Aucune semaine enregistrée.<br>Cliquez sur <b>+</b> pour en ajouter une.</div>`;
-    return;
-  }
-  const sel   = weeks[active] || weeks[nums[nums.length - 1]];
-  const selNum = weeks[active] ? active : nums[nums.length - 1];
-  const entry  = sel ? (typeof sel === 'string' ? { url: sel } : sel) : {};
-  const debut  = entry.debut || '';
-  const fin    = entry.fin   || '';
-  const url    = entry.url   || '';
-
-  const today = new Date(); today.setHours(12,0,0,0);
-  const isCurrent = debut && fin &&
-    today >= new Date(debut + 'T00:00:00') && today <= new Date(fin + 'T23:59:59');
-  const isUpcoming = debut && new Date(debut + 'T00:00:00') > today;
-
-  const statusBadge = isCurrent
-    ? `<span style="background:#dcfce7;color:#16a34a;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">En cours</span>`
-    : isUpcoming
-    ? `<span style="background:#fef9c3;color:#92400e;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">À venir</span>`
-    : `<span style="background:var(--bg-muted);color:var(--text-muted);font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">Passée</span>`;
-
-  const debutFr = debut ? debut.slice(8) + '/' + debut.slice(5,7) : '—';
-  const finFr   = fin   ? fin.slice(8)   + '/' + fin.slice(5,7)   : '—';
-
-  contentEl.innerHTML = `
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-      <div>
-        <div style="font-size:17px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px">
-          Semaine ${selNum}
-          <span style="background:var(--noz-navy);color:#fff;font-size:10px;padding:2px 8px;border-radius:10px">ACTIVE</span>
-        </div>
-        <div style="font-size:13px;color:var(--text-muted);margin-top:3px">${debutFr} au ${finFr}</div>
-      </div>
-      ${statusBadge}
-    </div>
-
-    <div style="margin-bottom:10px">
-      <div style="font-size:11px;color:var(--text-muted);font-weight:500;margin-bottom:5px">Dates de la semaine</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <input id="wm-debut" type="date" value="${debut}" style="flex:1;min-width:130px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--bg-muted);color:var(--text)">
-        <span style="align-self:center;color:var(--text-muted);font-size:13px">au</span>
-        <input id="wm-fin" type="date" value="${fin}" style="flex:1;min-width:130px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--bg-muted);color:var(--text)">
-      </div>
-    </div>
-
-    <div style="margin-bottom:14px">
-      <div style="font-size:11px;color:var(--text-muted);font-weight:500;margin-bottom:5px">Lien Google Sheets (CSV) :</div>
-      <div style="display:flex;gap:8px">
-        <input id="wm-url" type="url" value="${escHtml(url)}" placeholder="https://docs.google.com/spreadsheets/…"
-          style="flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--bg-muted);color:var(--text);outline:none"
-          onfocus="this.style.borderColor='var(--noz-navy)'" onblur="this.style.borderColor='var(--border)'">
-        <button onclick="weekMgrSave('${selNum}')" style="padding:8px 18px;border:none;border-radius:8px;background:var(--noz-navy);color:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Enregistrer</button>
-      </div>
-    </div>
-
-    <button onclick="weekMgrDelete('${selNum}')" style="padding:7px 16px;border:1.5px solid #dc2626;border-radius:8px;background:none;color:#dc2626;font-size:13px;cursor:pointer">Supprimer</button>
-  `;
-}
-
-function weekMgrSelect(num) {
-  _weekMgrSelected = String(num);
-  renderWeekMgrTabs();
-}
-
-function weekMgrAdd() {
-  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
-  const nums  = Object.keys(weeks).map(Number).sort((a,b) => a-b);
-  const next  = nums.length > 0 ? String(nums[nums.length - 1] + 1) : String(SEMAINE.numero + 1);
-  if (typeof saveWeekURL === 'function') saveWeekURL(next, '', '', '');
-  if (typeof setActiveWeekNum === 'function') setActiveWeekNum(next);
-  renderWeekMgrTabs();
-}
-
-function weekMgrSave(num) {
-  const url   = document.getElementById('wm-url')?.value.trim()   || '';
-  const debut = document.getElementById('wm-debut')?.value.trim() || '';
-  const fin   = document.getElementById('wm-fin')?.value.trim()   || '';
-  if (typeof saveWeekURL === 'function') saveWeekURL(num, url, debut, fin);
-  showToast('Semaine ' + num + ' enregistrée ✓');
-  renderWeekMgrTabs();
-  // Charger le planning de cette semaine
-  if (url) switchWeek(num);
-}
-
-function weekMgrDelete(num) {
-  if (!confirm('Supprimer la semaine ' + num + ' ?')) return;
-  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
-  delete weeks[num];
-  localStorage.setItem('noz_weeks', JSON.stringify(weeks));
-  const nums = Object.keys(weeks).sort((a,b) => Number(a)-Number(b));
-  if (typeof setActiveWeekNum === 'function') setActiveWeekNum(nums[nums.length - 1] || '');
-  renderWeekMgrTabs();
-  showToast('Semaine ' + num + ' supprimée');
 }
 
 document.addEventListener('DOMContentLoaded', init);
