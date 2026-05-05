@@ -1393,7 +1393,14 @@ async function init() {
 
 /* ——— GESTIONNAIRE SEMAINES (Admin) ————————— */
 
+let _weekMgrSelected = null; // onglet sélectionné dans le manager (indépendant du planning affiché)
+
 function buildWeekManager() {
+  // Initialiser sur la semaine active ou la plus récente
+  const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
+  const nums  = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
+  _weekMgrSelected = String(SEMAINE.numero);
+  if (!weeks[_weekMgrSelected] && nums.length > 0) _weekMgrSelected = nums[nums.length - 1];
   renderWeekMgrTabs();
 }
 
@@ -1404,7 +1411,7 @@ function renderWeekMgrTabs() {
 
   const weeks = typeof getAllWeeks === 'function' ? getAllWeeks() : {};
   const nums  = Object.keys(weeks).sort((a, b) => Number(a) - Number(b));
-  const active = String(typeof getActiveWeekNum === 'function' ? getActiveWeekNum() : SEMAINE.numero);
+  const active = _weekMgrSelected || String(SEMAINE.numero);
 
   // Onglets
   tabsEl.innerHTML = nums.map(num => {
@@ -1488,7 +1495,7 @@ function renderWeekMgrTabs() {
 }
 
 function weekMgrSelect(num) {
-  if (typeof setActiveWeekNum === 'function') setActiveWeekNum(num);
+  _weekMgrSelected = String(num);
   renderWeekMgrTabs();
 }
 
@@ -1508,11 +1515,8 @@ function weekMgrSave(num) {
   if (typeof saveWeekURL === 'function') saveWeekURL(num, url, debut, fin);
   showToast('Semaine ' + num + ' enregistrée ✓');
   renderWeekMgrTabs();
-  // Recharger le planning si c'est la semaine active
-  if (String(num) === String(SEMAINE.numero) && url) {
-    showSyncToast('Chargement…');
-    switchWeek(num);
-  }
+  // Charger le planning de cette semaine
+  if (url) switchWeek(num);
 }
 
 function weekMgrDelete(num) {
