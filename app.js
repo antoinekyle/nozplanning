@@ -997,6 +997,25 @@ function buildAdminPage() {
         </button>
       </div>
 
+      <!-- IMPORT EXCEL -->
+      <div id="admin-import" style="margin-bottom:28px">
+        <div class="admin-section-title">📂 Importer un fichier Excel</div>
+        <div style="background:var(--bg-card);border:2px dashed var(--border);border-radius:var(--radius-lg);padding:24px;text-align:center;transition:border-color 0.2s"
+          id="drop-zone"
+          ondragover="event.preventDefault();this.style.borderColor='var(--noz-navy)'"
+          ondragleave="this.style.borderColor='var(--border)'"
+          ondrop="handleExcelDrop(event)">
+          <div style="font-size:32px;margin-bottom:8px">📊</div>
+          <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">Glissez votre fichier Excel ici</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">ou cliquez pour sélectionner (.xlsx)</div>
+          <label style="padding:9px 20px;background:var(--noz-navy);color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+            Choisir un fichier
+            <input type="file" accept=".xlsx,.xls" style="display:none" onchange="handleExcelFile(this.files[0])">
+          </label>
+        </div>
+        <div id="import-status" style="margin-top:10px;font-size:13px;min-height:20px"></div>
+      </div>
+
       <!-- PLANNING PAR SEMAINE -->
       <div id="admin-semaines" style="margin-bottom:32px">
         <div class="admin-section-title">📅 Planning par semaine</div>
@@ -1297,6 +1316,7 @@ async function switchWeek(num) {
   if (typeof setActiveWeekNum === 'function') setActiveWeekNum(num);
   showSyncToast(`Chargement semaine ${num}…`);
 
+  loadStaffOverride();
   if (typeof fetchAndApplySheet === 'function') await fetchAndApplySheet();
 
   // Reconstruire toute l'interface
@@ -1346,6 +1366,9 @@ async function init() {
     }
   }
 
+  // Charger les données Excel importées (priorité sur data.js)
+  loadStaffOverride();
+
   // Charger le planning depuis Google Sheets
   if (typeof fetchAndApplySheet === 'function') {
     const ok = await fetchAndApplySheet();
@@ -1389,6 +1412,266 @@ async function init() {
       }
     );
   }
+}
+
+/* ——— IMPORT EXCEL ——————————————————————————— */
+
+function handleExcelDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').style.borderColor = 'var(--border)';
+  const file = e.dataTransfer?.files[0];
+  if (file) handleExcelFile(file);
+}
+
+async function handleExcelFile(file) {
+  if (!file) return;
+  const status = document.getElementById('import-status');
+  if (status) status.innerHTML = '<span style="color:var(--text-muted)">⏳ Lecture du fichier…</span>';
+
+  try {
+    const data = await file.arrayBuffer();
+    const wb   = XLSX.read(data, { type: 'array' });
+
+    // ——— Chercher les feuilles MATRICE et INDIVIDUEL ———
+    const matNom = wb.SheetNames.find(n => n.toUpperCase().includes('MATRICE'));
+    const indNom = wb.SheetNames.find(n => n.toUpperCase().includes('INDIVIDUEL'));
+
+    if (!matNom && !indNom) {
+      if (status) status.innerHTML = '<span style="color:#dc2626">❌ Feuilles MATRICE et INDIVIDUEL introuvables dans ce fichier.</span>';
+      return;
+    }
+
+    let newStaff = null;
+    if (matNom && indNom) {
+      newStaff = parseExcelPlanning(wb, matNom, indNom);
+    } else if (indNom) {
+      newStaff = parseIndividuelOnly(wb, indNom);
+    }
+
+    if (!newStaff || newStaff.length === 0) {
+      if (status) status.innerHTML = '<span style="color:#dc2626">❌ Aucun employé trouvé. Vérifiez la structure du fichier.</span>';
+      return;
+    }
+
+    // Appliquer + sauvegarder en localStorage
+    STAFF.length = 0;
+    STAFF.push(...newStaff);
+    localStorage.setItem('noz_staff_override', JSON.stringify(newStaff));
+    sauvegarderSemaineRecap();
+
+    // Reconstruire l'interface
+    document.getElementById('nav').innerHTML   = '';
+    document.getElementById('pages').innerHTML = '';
+    buildNav(); buildWeekBadge(); buildGlobalPage(); buildCalendarPage();
+    buildAdminLockPage(); buildAdminPage();
+    STAFF.forEach((s, i) => buildPersonPage(s, i));
+    STAFF.forEach((s, i) => renderConsignesFor(s.prenom, null, document.getElementById('consigne-count-' + i)));
+    showPage('admin');
+
+    if (status) status.innerHTML = `<span style="color:#16a34a">✅ ${newStaff.length} employés importés depuis <b>${file.name}</b></span>`;
+
+  } catch (err) {
+    console.error('[Import Excel]', err);
+    if (status) status.innerHTML = '<span style="color:#dc2626">❌ Erreur de lecture : ' + err.message + '</span>';
+  }
+}
+
+function parseExcelPlanning(wb, matNom, indNom) {
+  const matSheet = wb.Sheets[matNom];
+  const indSheet = wb.Sheets[indNom];
+  const matData  = XLSX.utils.sheet_to_json(matSheet, { header: 1, defval: '' });
+  const indData  = XLSX.utils.sheet_to_json(indSheet, { header: 1, defval: '' });
+
+  // ——— 1. Infos semaine depuis MATRICE ———
+  for (const row of matData) {
+    if (String(row[0]).trim() === 'S :' && /^\d+$/.test(String(row[1] || '').trim())) {
+      SEMAINE.numero = parseInt(row[1]);
+      const debut = parseDateFr(String(row[2] || ''));
+      const fin   = parseDateFr(String(row[4] || ''));
+      if (debut) { SEMAINE.debut = debut; Object.assign(JOURS_DATES, calcJoursDates(debut)); }
+      if (fin)   SEMAINE.fin = fin;
+      break;
+    }
+  }
+
+  // ——— 2. Lire INDIVIDUEL pour les horaires ———
+  // Structure attendue : colonnes A=Prénom, puis jours avec deb/fin
+  const staffHours = parseIndividuelSheet(indData);
+
+  // ——— 3. Lire MATRICE pour les tâches ———
+  const staffTasks = parseMatriceTasks(matData);
+
+  // ——— 4. Fusionner ———
+  const prenoms = Object.keys(staffHours).length > 0 ? Object.keys(staffHours) : Object.keys(staffTasks);
+  const JOURS_KEYS = ['Lun','Mar','Mer','Jeu','Ven','Sam'];
+
+  return prenoms.map((prenom, idx) => {
+    const existing = STAFF.find(s => s.prenom === prenom);
+    const hours    = staffHours[prenom]  || {};
+    const tasks    = staffTasks[prenom]  || {};
+    const shifts   = JOURS_KEYS.map((j, i) => {
+      const h = hours[i]  || { deb: 0, fin: 0, pause_deb: null, pause_fin: null };
+      const t = tasks[i]  || null;
+      return { j, deb: h.deb, fin: h.fin, task: h.deb ? (t || existing?.shifts[i]?.task || null) : null, pause_deb: h.pause_deb, pause_fin: h.pause_fin };
+    });
+    const totalSemaine = shifts.reduce((s, sh) => {
+      if (!sh.deb) return s;
+      const brut  = sh.fin - sh.deb;
+      const pause = sh.pause_deb && sh.pause_fin ? sh.pause_fin - sh.pause_deb : 0;
+      return s + brut - pause;
+    }, 0);
+    return {
+      prenom,
+      nom:    existing?.nom    || '',
+      role:   existing?.role   || 'EMP',
+      contrat:existing?.contrat|| 35,
+      pin:    existing?.pin    || String(1000 + idx + 1),
+      totalSemaine: Math.round(totalSemaine * 4) / 4,
+      shifts,
+    };
+  });
+}
+
+function parseIndividuelSheet(rows) {
+  // Cherche les blocs : ligne "Prénom" puis lignes employés avec deb/fin par jour
+  const result = {};
+  const JOURS_FR = ['LUNDI','MARDI','MERCREDI','JEUDI','VENDREDI','SAMEDI'];
+  let colMap = {}; // jourIdx → colonne deb
+
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    // Chercher la ligne d'en-tête avec les jours
+    const rowUpper = row.map(c => String(c).trim().toUpperCase());
+    const hasJour  = JOURS_FR.some(j => rowUpper.includes(j));
+    if (hasJour) {
+      colMap = {};
+      JOURS_FR.forEach((j, i) => {
+        const col = rowUpper.indexOf(j);
+        if (col >= 0) colMap[i] = col;
+      });
+      continue;
+    }
+    // Ligne employé : prénom en colonne basse + horaires
+    const prenom = String(row[0] || row[1] || '').trim();
+    if (!prenom || /^(prénom|nom|total|contrat)/i.test(prenom)) continue;
+    if (!/^[A-ZÀ-Ü][a-zà-ü]/.test(prenom)) continue;
+
+    if (!result[prenom]) result[prenom] = {};
+    Object.entries(colMap).forEach(([jourIdx, col]) => {
+      const debRaw = String(row[col]     || '').trim();
+      const finRaw = String(row[col + 1] || '').trim();
+      const pauseDebRaw = String(row[col + 2] || '').trim();
+      const pauseFinRaw = String(row[col + 3] || '').trim();
+      const deb = parseHeureExcel(debRaw);
+      const fin = parseHeureExcel(finRaw);
+      if (deb > 0) {
+        result[prenom][parseInt(jourIdx)] = {
+          deb, fin,
+          pause_deb: parseHeureExcel(pauseDebRaw) || null,
+          pause_fin: parseHeureExcel(pauseFinRaw) || null,
+        };
+      }
+    });
+  }
+  return result;
+}
+
+function parseMatriceTasks(rows) {
+  const result = {};
+  const TASK_MAP = { '1':'Pole1','2':'TDM','3':'Pole3','4':'Ecole','5':'Divers','6':'Divers','7':'Pole2','8':'Caisses','9':'Divers','10':'Divers' };
+  const JOUR_NOMS = { 'LUNDI':0,'MARDI':1,'MERCREDI':2,'JEUDI':3,'VENDREDI':4,'SAMEDI':5 };
+
+  // Trouver les blocs journaliers (lignes "S :")
+  const blocks = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() !== 'S :') continue;
+    for (let k = 5; k < Math.min(rows[i].length, 15); k++) {
+      const v = String(rows[i][k] || '').trim().toUpperCase();
+      if (v in JOUR_NOMS) { blocks.push({ jourIdx: JOUR_NOMS[v], startLine: i }); break; }
+    }
+  }
+
+  for (let b = 0; b < blocks.length; b++) {
+    const { jourIdx, startLine } = blocks[b];
+    if (jourIdx >= 6) continue;
+    const endLine = blocks[b+1] ? blocks[b+1].startLine : rows.length;
+    for (let i = startLine + 1; i < endLine; i++) {
+      const row    = rows[i];
+      const prenom = String(row[5] || '').trim();
+      if (!prenom || !/^[A-ZÀ-Ü][a-zà-ü]/.test(prenom)) continue;
+      if (!result[prenom]) result[prenom] = {};
+      // Codes tâche dans colonnes I:JB (indices 8 à 262)
+      const codes = [];
+      for (let c = 8; c < Math.min(row.length, 263); c++) {
+        const v = String(row[c] || '').trim();
+        if (/^\d+$/.test(v) && v !== '0') codes.push(v);
+      }
+      // Mode (valeur la plus fréquente)
+      const count = {};
+      let best = null, max = 0;
+      for (const v of codes) { count[v] = (count[v]||0)+1; if (count[v]>max) { max=count[v]; best=v; } }
+      if (best) result[prenom][jourIdx] = TASK_MAP[best] || null;
+    }
+  }
+  return result;
+}
+
+function parseIndividuelOnly(wb, indNom) {
+  const indData = XLSX.utils.sheet_to_json(wb.Sheets[indNom], { header: 1, defval: '' });
+  const hours   = parseIndividuelSheet(indData);
+  const JOURS_KEYS = ['Lun','Mar','Mer','Jeu','Ven','Sam'];
+  return Object.keys(hours).map((prenom, idx) => {
+    const existing = STAFF.find(s => s.prenom === prenom);
+    const shifts   = JOURS_KEYS.map((j, i) => {
+      const h = hours[prenom][i] || { deb: 0, fin: 0, pause_deb: null, pause_fin: null };
+      return { j, deb: h.deb, fin: h.fin, task: existing?.shifts[i]?.task || null, pause_deb: h.pause_deb, pause_fin: h.pause_fin };
+    });
+    const total = shifts.reduce((s, sh) => {
+      if (!sh.deb) return s;
+      return s + (sh.fin - sh.deb) - (sh.pause_deb && sh.pause_fin ? sh.pause_fin - sh.pause_deb : 0);
+    }, 0);
+    return { prenom, nom: existing?.nom||'', role: existing?.role||'EMP', contrat: existing?.contrat||35, pin: existing?.pin||String(1000+idx+1), totalSemaine: Math.round(total*4)/4, shifts };
+  });
+}
+
+function parseHeureExcel(str) {
+  if (!str || str === '0' || str === '-' || str === 'R') return 0;
+  str = String(str).trim().replace(',', '.');
+  // Format "8h45" ou "8H45"
+  const hm = str.match(/^(\d{1,2})[hH](\d{0,2})$/);
+  if (hm) return parseInt(hm[1]) + (parseInt(hm[2]||'0')/60);
+  // Format "8:45"
+  const hc = str.match(/^(\d{1,2}):(\d{2})$/);
+  if (hc) return parseInt(hc[1]) + parseInt(hc[2])/60;
+  // Nombre décimal (fraction Excel : 0.375 = 9h00)
+  const n = parseFloat(str);
+  if (!isNaN(n) && n > 0 && n < 1) return Math.round(n * 24 * 4) / 4; // fraction de jour → heures
+  if (!isNaN(n) && n >= 1) return n;
+  return 0;
+}
+
+function parseDateFr(str) {
+  if (!str) return null;
+  const parts = str.trim().split('/');
+  if (parts.length !== 3) return null;
+  const [d, m, y] = parts.map(Number);
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+
+// Charger les données importées si présentes en localStorage
+function loadStaffOverride() {
+  try {
+    const saved = localStorage.getItem('noz_staff_override');
+    if (saved) {
+      const data = JSON.parse(saved);
+      if (Array.isArray(data) && data.length > 0) {
+        STAFF.length = 0;
+        STAFF.push(...data);
+        return true;
+      }
+    }
+  } catch {}
+  return false;
 }
 
 /* ——— GESTIONNAIRE SEMAINES (Admin) ————————— */
