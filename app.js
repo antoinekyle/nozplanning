@@ -758,23 +758,59 @@ function renderConsignesPage() {
 }
 
 function submitConsigne() {
-  const text     = document.getElementById('consigne-text').value.trim();
-  const dest     = document.getElementById('consigne-dest').value;
-  const priority = document.getElementById('consigne-priority').value;
+  const text     = (document.getElementById('consigne-text')?.value || '').trim();
+  const dest     = document.getElementById('consigne-dest')?.value || 'Tous';
+  const priority = document.getElementById('consigne-priority')?.value || 'normale';
   if (!text) {
-    document.getElementById('consigne-text').style.borderColor = '#dc2626';
-    setTimeout(() => document.getElementById('consigne-text').style.borderColor = 'var(--border)', 1500);
+    const ta = document.getElementById('consigne-text');
+    if (ta) { ta.style.borderColor = '#dc2626'; setTimeout(() => ta.style.borderColor = 'var(--border)', 1500); }
     return;
   }
   addConsigne(dest, text, priority);
-  document.getElementById('consigne-text').value = '';
+  const ta = document.getElementById('consigne-text');
+  if (ta) ta.value = '';
   showToast('Consigne envoyée ✓');
+  refreshAdminConsignes();
+}
+
+function refreshAdminConsignes() {
+  // Met à jour la liste dans la page admin sans la reconstruire entièrement
+  const list = document.getElementById('admin-consignes-list');
+  if (!list) return;
+  const all = getAllConsignes().sort((a, b) => {
+    const p = { haute:0, normale:1, info:2 };
+    return (p[a.priority]||1) - (p[b.priority]||1);
+  });
+  if (!all.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Aucune consigne active</div>';
+    return;
+  }
+  list.innerHTML = all.map(c => {
+    const pColor = c.priority === 'haute' ? '#dc2626' : c.priority === 'normale' ? '#f59e0b' : '#6b7280';
+    const s = STAFF.find(x => x.prenom === c.dest);
+    const rc = s ? roleColor(s.role) : '#888';
+    const iniIsEmoji = c.dest === 'Tous';
+    const ini = iniIsEmoji ? '👥' : (s ? initiales(s) : (c.dest||'?')[0].toUpperCase());
+    return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)">
+      ${iniIsEmoji
+        ? `<span style="width:28px;height:28px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">${ini}</span>`
+        : `<span style="width:28px;height:28px;border-radius:50%;background:${rc};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">${ini}</span>`
+      }
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px">${c.dest || 'Tous'} · <span style="color:${pColor};font-weight:600">${c.priority}</span></div>
+        <div style="font-size:13px;color:var(--text)">${escHtml(c.text)}</div>
+        <div style="font-size:10px;color:var(--text-light);margin-top:3px">${c.from} · ${c.date}</div>
+      </div>
+      <button onclick="deleteConsigne(${c.id});refreshAdminConsignes()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:0;flex-shrink:0;line-height:1">×</button>
+    </div>`;
+  }).join('');
 }
 
 function clearAllConsignes() {
   if (!confirm('Effacer toutes les consignes ?')) return;
   localStorage.removeItem(CONSIGNES_KEY);
   refreshAllConsignes();
+  refreshAdminConsignes();
   updateNavBadges();
   showToast('Consignes effacées');
 }
@@ -812,36 +848,177 @@ function buildAdminPage() {
   div.className = 'page';
   div.id = 'page-admin';
 
-  // Lister les mois disponibles
-  const recap  = getRecapMensuel();
-  const moisDispo = Object.keys(recap).sort().reverse();
-  const moisFr = ['jan','fév','mar','avr','mai','juin','juil','aoû','sep','oct','nov','déc'];
+  // Styles boutons raccourcis
+  if (!document.getElementById('admin-styles')) {
+    const s = document.createElement('style');
+    s.id = 'admin-styles';
+    s.textContent = `
+      .admin-btn {
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+        padding:22px 12px;border:1px solid var(--border);border-radius:16px;
+        background:var(--bg-card);color:var(--text);cursor:pointer;
+        font-size:13px;font-weight:600;text-align:center;
+        transition:all 0.15s;box-shadow:0 2px 8px rgba(0,0,0,0.06);
+      }
+      .admin-btn:hover { transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,0.12);border-color:var(--noz-navy); }
+      .admin-btn:active { transform:translateY(0); }
+      .admin-btn .admin-btn-icon { font-size:30px;line-height:1; }
+      .admin-section-title {
+        font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+        color:var(--text-muted);margin-bottom:10px;
+      }
+    `;
+    document.head.appendChild(s);
+  }
 
+  const recap     = getRecapMensuel();
+  const moisDispo = Object.keys(recap).sort().reverse();
+  const moisFr    = ['jan','fév','mar','avr','mai','juin','juil','aoû','sep','oct','nov','déc'];
   function moisLabel(k) {
     const [y, m] = k.split('-');
     return moisFr[parseInt(m) - 1] + '. ' + y;
   }
 
+  // Toutes les consignes actives
+  const toutesConsignes = getAllConsignes().sort((a, b) => {
+    const p = { haute:0, normale:1, basse:2 };
+    return (p[a.priority]||1) - (p[b.priority]||1);
+  });
+
   div.innerHTML = `
-    <div style="max-width:700px;margin:0 auto">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
-        <div style="font-size:20px;font-weight:700;color:var(--text)">📊 Récap mensuel</div>
-        <select id="recap-mois-select" onchange="renderRecapTable()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--bg-card);color:var(--text);cursor:pointer">
-          ${moisDispo.length
-            ? moisDispo.map(m => `<option value="${m}">${moisLabel(m)}</option>`).join('')
-            : '<option value="">Aucune donnée</option>'
+    <div style="max-width:720px;margin:0 auto;padding-bottom:40px">
+
+      <!-- TITRE -->
+      <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:20px">🔒 Administration</div>
+
+      <!-- 6 BOUTONS RACCOURCIS -->
+      <div class="admin-section-title">Accès rapide</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px">
+        <button class="admin-btn" onclick="showPage('global')">
+          <span class="admin-btn-icon">📅</span>Planning global
+        </button>
+        <button class="admin-btn" onclick="showPage('calendar')">
+          <span class="admin-btn-icon">🗓</span>Calendrier
+        </button>
+        <button class="admin-btn" onclick="document.getElementById('admin-recap').scrollIntoView({behavior:'smooth'})">
+          <span class="admin-btn-icon">📊</span>Récap mois
+        </button>
+        <button class="admin-btn" onclick="document.getElementById('admin-consignes').scrollIntoView({behavior:'smooth'})">
+          <span class="admin-btn-icon">📌</span>Consignes
+        </button>
+        <button class="admin-btn" onclick="document.getElementById('admin-envoyer').scrollIntoView({behavior:'smooth'})">
+          <span class="admin-btn-icon">📤</span>Planning à envoyer
+        </button>
+        <button class="admin-btn" onclick="showPage('global')">
+          <span class="admin-btn-icon">👥</span>Équipe S${SEMAINE.numero}
+        </button>
+      </div>
+
+      <!-- RÉCAP MENSUEL -->
+      <div id="admin-recap" style="margin-bottom:32px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+          <div class="admin-section-title" style="margin-bottom:0">📊 Récap mensuel</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="recap-mois-select" onchange="renderRecapTable()" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--bg-card);color:var(--text);cursor:pointer">
+              ${moisDispo.length
+                ? moisDispo.map(m => `<option value="${m}">${moisLabel(m)}</option>`).join('')
+                : '<option value="">Aucune donnée</option>'}
+            </select>
+            <button onclick="imprimerRecap()" style="padding:7px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:none;color:var(--text-muted);cursor:pointer;font-size:12px">🖨️</button>
+          </div>
+        </div>
+        <div id="recap-table-zone"></div>
+      </div>
+
+      <!-- CONSIGNES -->
+      <div id="admin-consignes" style="margin-bottom:32px">
+        <div class="admin-section-title">📌 Consignes</div>
+
+        <!-- Formulaire ajout -->
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:14px;box-shadow:var(--shadow-sm)">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:12px">Nouvelle consigne</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center">
+            <label style="font-size:12px;color:var(--text-muted);font-weight:500">Pour :</label>
+            <select id="consigne-dest" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:13px;background:var(--bg-muted);color:var(--text);cursor:pointer">
+              <option value="Tous">👥 Toute l'équipe</option>
+              ${STAFF.map(s => `<option value="${s.prenom}">${s.prenom}</option>`).join('')}
+            </select>
+            <label style="font-size:12px;color:var(--text-muted);font-weight:500;margin-left:8px">Priorité :</label>
+            <select id="consigne-priority" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:13px;background:var(--bg-muted);color:var(--text);cursor:pointer">
+              <option value="normale">🟡 Normale</option>
+              <option value="haute">🔴 Haute</option>
+              <option value="info">🔵 Info</option>
+            </select>
+          </div>
+          <textarea id="consigne-text"
+            placeholder="Ex: Penser à faire le TDM avant 9h, vérifier le facing après la livraison..."
+            style="width:100%;border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 14px;font-size:13px;background:var(--bg-muted);color:var(--text);resize:vertical;min-height:70px;font-family:inherit;outline:none;transition:border-color 0.15s;box-sizing:border-box"
+            onfocus="this.style.borderColor='var(--noz-navy)'"
+            onblur="this.style.borderColor='var(--border)'"
+          ></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:10px;gap:8px">
+            <button onclick="document.getElementById('consigne-text').value=''" style="padding:8px 16px;border:1px solid var(--border);border-radius:var(--radius-sm);background:none;color:var(--text-muted);cursor:pointer;font-size:13px">Effacer</button>
+            <button onclick="submitConsigne()" style="padding:8px 20px;border:none;border-radius:var(--radius-sm);background:var(--noz-navy);color:#fff;cursor:pointer;font-size:13px;font-weight:600" onmouseover="this.style.background='#1a3a6e'" onmouseout="this.style.background='var(--noz-navy)'">Envoyer</button>
+          </div>
+        </div>
+
+        <!-- Liste consignes actives -->
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">
+          <span>Consignes actives</span>
+          <button onclick="clearAllConsignes()" style="font-size:10px;color:var(--text-light);background:none;border:none;cursor:pointer;font-weight:400">Tout effacer</button>
+        </div>
+        <div id="admin-consignes-list" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden">
+          ${toutesConsignes.length === 0
+            ? `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Aucune consigne active</div>`
+            : toutesConsignes.map(c => {
+                const pColor = c.priority === 'haute' ? '#dc2626' : c.priority === 'normale' ? '#f59e0b' : '#6b7280';
+                const s = STAFF.find(x => x.prenom === c.dest);
+                const rc = s ? roleColor(s.role) : '#888';
+                const ini = c.dest === 'Tous' ? '👥' : (s ? initiales(s) : (c.dest||'?')[0].toUpperCase());
+                const iniIsEmoji = c.dest === 'Tous';
+                return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)">
+                  ${iniIsEmoji
+                    ? `<span style="width:28px;height:28px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">${ini}</span>`
+                    : `<span style="width:28px;height:28px;border-radius:50%;background:${rc};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">${ini}</span>`
+                  }
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px">${c.dest || 'Tous'} · <span style="color:${pColor};font-weight:600">${c.priority}</span></div>
+                    <div style="font-size:13px;color:var(--text)">${escHtml(c.text)}</div>
+                    <div style="font-size:10px;color:var(--text-light);margin-top:3px">${c.from} · ${c.date}</div>
+                  </div>
+                  <button onclick="deleteConsigne(${c.id});refreshAdminConsignes()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:0;flex-shrink:0;line-height:1">×</button>
+                </div>`;
+              }).join('')
           }
-        </select>
+        </div>
       </div>
-      <div id="recap-table-zone"></div>
-      <div style="margin-top:12px;text-align:right">
-        <button onclick="imprimerRecap()" style="padding:8px 18px;border:1px solid var(--border);border-radius:var(--radius-sm);background:none;color:var(--text-muted);cursor:pointer;font-size:12px">🖨️ Imprimer</button>
+
+      <!-- PLANNING À ENVOYER -->
+      <div id="admin-envoyer">
+        <div class="admin-section-title">📤 Planning à envoyer</div>
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;display:flex;flex-direction:column;gap:12px">
+          <div style="font-size:13px;color:var(--text-muted)">Semaine ${SEMAINE.numero} — ${SEMAINE.debut ? SEMAINE.debut.slice(8)+'/'+SEMAINE.debut.slice(5,7) : ''} au ${SEMAINE.fin ? SEMAINE.fin.slice(8)+'/'+SEMAINE.fin.slice(5,7) : ''} · ${SEMAINE.magasin}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <button onclick="imprimerPlanning('global')" style="padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--noz-navy);color:#fff;font-size:13px;font-weight:600;cursor:pointer">
+              🖨️ Imprimer planning complet
+            </button>
+            <button onclick="imprimerPlanning('individuel')" style="padding:14px;border:1px solid var(--border);border-radius:12px;background:none;color:var(--text);font-size:13px;font-weight:600;cursor:pointer">
+              👤 Imprimer par employé
+            </button>
+          </div>
+        </div>
       </div>
+
     </div>
   `;
 
   pages.appendChild(div);
   if (moisDispo.length) renderRecapTable();
+}
+
+function imprimerPlanning(type) {
+  showToast('Préparation impression…');
+  setTimeout(() => window.print(), 300);
 }
 
 function renderRecapTable() {
