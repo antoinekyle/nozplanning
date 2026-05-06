@@ -97,7 +97,10 @@ function buildNav() {
       btn.innerHTML = `<span style="font-size:15px;line-height:1">${tab.icon}</span> ${tab.label}`;
     }
 
-    btn.addEventListener('click', () => showPage(tab.id));
+    btn.addEventListener('click', () => {
+      if (tab.id === 'admin') { showAdminPage(); }
+      else showPage(tab.id);
+    });
 
     // Badge notification consignes sur onglet employé
     if (tab.staff) {
@@ -843,6 +846,83 @@ function sauvegarderSemaineRecap() {
   localStorage.setItem(RECAP_KEY, JSON.stringify(recap));
 }
 
+/* ——— PIN ADMIN —————————————————————————————— */
+const ADMIN_PIN = '0409';
+let _pinInput = '';
+
+function showAdminPage() {
+  if (sessionStorage.getItem('noz_admin_auth') === '1') {
+    showPage('admin');
+  } else {
+    _pinInput = '';
+    adminPinUpdateDots();
+    showPage('admin-lock');
+  }
+}
+
+function buildAdminLockPage() {
+  const pages = document.getElementById('pages');
+  const div = document.createElement('div');
+  div.className = 'page';
+  div.id = 'page-admin-lock';
+  div.innerHTML = `
+    <div style="max-width:340px;margin:60px auto 0;text-align:center">
+      <div style="font-size:48px;margin-bottom:12px">🔒</div>
+      <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px">Accès Administration</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:24px">Saisir le code PIN</div>
+      <div id="admin-pin-dots" style="display:flex;justify-content:center;gap:14px;margin-bottom:28px">
+        ${[0,1,2,3].map(i => `<span class="pin-dot" data-i="${i}" style="width:14px;height:14px;border-radius:50%;border:2px solid var(--noz-navy);background:transparent"></span>`).join('')}
+      </div>
+      <div id="admin-pin-msg" style="font-size:13px;color:#dc2626;min-height:18px;margin-bottom:14px"></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+        ${[1,2,3,4,5,6,7,8,9].map(n => `
+          <button onclick="adminPinPress('${n}')" style="padding:18px 0;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);color:var(--text);font-size:22px;font-weight:600;cursor:pointer">${n}</button>
+        `).join('')}
+        <button onclick="adminPinDel()" style="padding:18px 0;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);color:var(--text-muted);font-size:18px;cursor:pointer">←</button>
+        <button onclick="adminPinPress('0')" style="padding:18px 0;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);color:var(--text);font-size:22px;font-weight:600;cursor:pointer">0</button>
+        <button onclick="_pinInput='';adminPinUpdateDots();document.getElementById('admin-pin-msg').textContent=''" style="padding:18px 0;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);color:var(--text-muted);font-size:14px;cursor:pointer">C</button>
+      </div>
+    </div>
+  `;
+  pages.appendChild(div);
+}
+
+function adminPinUpdateDots() {
+  document.querySelectorAll('#admin-pin-dots .pin-dot').forEach((d, i) => {
+    d.style.background = i < _pinInput.length ? 'var(--noz-navy)' : 'transparent';
+  });
+}
+
+function adminPinPress(v) {
+  if (_pinInput.length >= 4) return;
+  _pinInput += v;
+  adminPinUpdateDots();
+  if (_pinInput.length === 4) setTimeout(adminPinCheck, 150);
+}
+
+function adminPinDel() {
+  _pinInput = _pinInput.slice(0, -1);
+  adminPinUpdateDots();
+  document.getElementById('admin-pin-msg').textContent = '';
+}
+
+function adminPinCheck() {
+  if (_pinInput === ADMIN_PIN) {
+    sessionStorage.setItem('noz_admin_auth', '1');
+    _pinInput = '';
+    showPage('admin');
+  } else {
+    document.getElementById('admin-pin-msg').textContent = 'Code incorrect';
+    _pinInput = '';
+    adminPinUpdateDots();
+  }
+}
+
+function adminLogout() {
+  sessionStorage.removeItem('noz_admin_auth');
+  showPage('global');
+}
+
 function buildAdminPage() {
   const pages = document.getElementById('pages');
   const div   = document.createElement('div');
@@ -1212,6 +1292,7 @@ async function switchWeek(num) {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
+  buildAdminLockPage();
   buildAdminPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
   STAFF.forEach((s, i) => {
@@ -1262,6 +1343,7 @@ async function init() {
   buildWeekBadge();
   buildGlobalPage();
   buildCalendarPage();
+  buildAdminLockPage();
   buildAdminPage();
   STAFF.forEach((s, i) => buildPersonPage(s, i));
 
