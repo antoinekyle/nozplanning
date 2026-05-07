@@ -1214,10 +1214,25 @@ function renderWeekMgrTabs() {
              📂 Choisir un fichier Excel
              <input type="file" accept=".xlsx,.xls" style="display:none" onchange="weekMgrImportExcel('${selNum}', this.files[0])">
            </label>`}
+      ${localStorage.getItem('noz_staff_backup')
+        ? `<button onclick="restoreStaffBackup()" style="margin-left:8px;padding:5px 12px;border:1.5px solid var(--noz-navy);border-radius:7px;background:none;color:var(--noz-navy);font-size:12px;cursor:pointer">↶ Restaurer données précédentes</button>`
+        : ''}
     </div>
 
-    <button onclick="weekMgrDelete('${selNum}')" style="padding:7px 16px;border:1.5px solid #dc2626;border-radius:8px;background:none;color:#dc2626;font-size:13px;cursor:pointer">Supprimer</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="weekMgrDelete('${selNum}')" style="padding:7px 16px;border:1.5px solid #dc2626;border-radius:8px;background:none;color:#dc2626;font-size:13px;cursor:pointer">Supprimer la semaine</button>
+      <button onclick="resetAllImportedData()" style="padding:7px 16px;border:1.5px solid #f59e0b;border-radius:8px;background:none;color:#f59e0b;font-size:13px;cursor:pointer">🧹 Réinitialiser toutes les données importées</button>
+    </div>
   `;
+}
+
+function resetAllImportedData() {
+  if (!confirm('⚠️ Cela va supprimer TOUTES les données Excel importées de toutes les semaines.\n\nLes URL Google Sheets et dates seront conservées.\n\nContinuer ?')) return;
+  // Supprimer toutes les clés noz_staff_S*
+  const keys = Object.keys(localStorage).filter(k => k.startsWith('noz_staff_S') || k === 'noz_staff_override' || k === 'noz_staff_backup');
+  keys.forEach(k => localStorage.removeItem(k));
+  showToast('✅ ' + keys.length + ' clés supprimées — rechargement…');
+  setTimeout(() => location.reload(), 600);
 }
 
 function weekMgrSelect(num) { _weekMgrSelected = String(num); renderWeekMgrTabs(); }
@@ -1264,7 +1279,15 @@ async function weekMgrImportExcel(num, file) {
     if (!matNom && !indNom) { showToast('❌ Feuilles MATRICE/INDIVIDUEL introuvables'); return; }
     let newStaff = (matNom && indNom) ? parseExcelPlanning(wb, matNom, indNom)
                                       : (indNom ? parseIndividuelOnly(wb, indNom) : null);
-    if (!newStaff || newStaff.length === 0) { showToast('❌ Aucun employé trouvé'); return; }
+    if (!newStaff || newStaff.length === 0) { showToast('❌ Aucun employé trouvé — données conservées'); return; }
+    if (newStaff.length < 2) {
+      if (!confirm(`Seulement ${newStaff.length} employé(s) détecté(s) (${newStaff.map(s=>s.prenom).join(', ')}).\n\nLe parser n'a peut-être pas reconnu la structure du fichier. Continuer quand même ?`)) {
+        showToast('Import annulé');
+        return;
+      }
+    }
+    // Sauvegarde de secours avant remplacement
+    try { localStorage.setItem('noz_staff_backup', JSON.stringify(STAFF)); } catch {}
     localStorage.setItem('noz_staff_S' + num, JSON.stringify(newStaff));
     if (String(num) === String(typeof getActiveWeekNum === 'function' ? getActiveWeekNum() : SEMAINE.numero)) {
       STAFF.length = 0; STAFF.push(...newStaff);
@@ -1274,6 +1297,8 @@ async function weekMgrImportExcel(num, file) {
       buildAdminLockPage(); buildAdminPage();
       STAFF.forEach((s, i) => buildPersonPage(s, i));
       STAFF.forEach((s, i) => renderConsignesFor(s.prenom, null, document.getElementById('consigne-count-' + i)));
+      // Garder l'admin déverrouillé après import
+      sessionStorage.setItem('noz_admin_auth', '1');
       showPage('admin');
     } else { renderWeekMgrTabs(); }
     showToast('✅ ' + newStaff.length + ' employés importés pour S' + num);
@@ -1281,6 +1306,27 @@ async function weekMgrImportExcel(num, file) {
     console.error('[weekMgrImportExcel]', err);
     showToast('❌ ' + err.message);
   }
+}
+
+function restoreStaffBackup() {
+  try {
+    const backup = localStorage.getItem('noz_staff_backup');
+    if (!backup) { showToast('❌ Aucune sauvegarde'); return; }
+    const data = JSON.parse(backup);
+    if (!Array.isArray(data) || data.length === 0) { showToast('❌ Sauvegarde vide'); return; }
+    // Supprimer la donnée Excel pour la semaine active
+    const num = typeof getActiveWeekNum === 'function' ? getActiveWeekNum() : SEMAINE.numero;
+    localStorage.removeItem('noz_staff_S' + num);
+    STAFF.length = 0; STAFF.push(...data);
+    document.getElementById('nav').innerHTML = ''; document.getElementById('pages').innerHTML = '';
+    buildNav(); buildWeekBadge(); buildGlobalPage(); buildCalendarPage();
+    buildAdminLockPage(); buildAdminPage();
+    STAFF.forEach((s, i) => buildPersonPage(s, i));
+    STAFF.forEach((s, i) => renderConsignesFor(s.prenom, null, document.getElementById('consigne-count-' + i)));
+    sessionStorage.setItem('noz_admin_auth', '1');
+    showPage('admin');
+    showToast('✅ Données restaurées (' + data.length + ' employés)');
+  } catch (e) { showToast('❌ Erreur: ' + e.message); }
 }
 
 function weekMgrExcelClear(num) {
@@ -1296,17 +1342,7 @@ function parseExcelPlanning(wb, matNom, indNom) {
   const indSheet = wb.Sheets[indNom];
   const matData  = XLSX.utils.sheet_to_json(matSheet, { header: 1, defval: '' });
   const indData  = XLSX.utils.sheet_to_json(indSheet, { header: 1, defval: '' });
-
-  for (const row of matData) {
-    if (String(row[0]).trim() === 'S :' && /^\d+$/.test(String(row[1] || '').trim())) {
-      SEMAINE.numero = parseInt(row[1]);
-      const debut = parseDateFr(String(row[2] || ''));
-      const fin   = parseDateFr(String(row[4] || ''));
-      if (debut) { SEMAINE.debut = debut; if (typeof calcJoursDates === 'function') Object.assign(JOURS_DATES, calcJoursDates(debut)); }
-      if (fin)   SEMAINE.fin = fin;
-      break;
-    }
-  }
+  // Note: on ne touche PAS à SEMAINE.numero ici — la semaine cible est choisie par l'utilisateur
 
   const staffHours = parseIndividuelSheet(indData);
   const staffTasks = parseMatriceTasks(matData);
@@ -1340,6 +1376,18 @@ function parseExcelPlanning(wb, matNom, indNom) {
   });
 }
 
+function isValidPrenom(s) {
+  if (!s) return false;
+  s = String(s).trim();
+  if (s.length < 2 || s.length > 25) return false;
+  if (/[:;\/\\\d]/.test(s)) return false;                         // pas de :, ;, /, \, chiffre
+  if (/\s/.test(s)) return false;                                 // pas d'espace (un seul mot)
+  if (/^(magasin|prénom|prenom|nom|total|contrat|date|semaine|adresse|code|ref|s\s*:|magasins?\s*de)/i.test(s)) return false;
+  if (!/^[A-ZÀ-Ü]/.test(s)) return false;                          // commence par majuscule
+  if (!/[a-zà-ü]/.test(s)) return false;                           // contient au moins une minuscule
+  return true;
+}
+
 function parseIndividuelSheet(rows) {
   const result = {};
   const JOURS_FR = ['LUNDI','MARDI','MERCREDI','JEUDI','VENDREDI','SAMEDI'];
@@ -1354,8 +1402,7 @@ function parseIndividuelSheet(rows) {
       continue;
     }
     const prenom = String(row[0] || row[1] || '').trim();
-    if (!prenom || /^(prénom|nom|total|contrat)/i.test(prenom)) continue;
-    if (!/^[A-ZÀ-Ü][a-zà-ü]/.test(prenom)) continue;
+    if (!isValidPrenom(prenom)) continue;
     if (!result[prenom]) result[prenom] = {};
     Object.entries(colMap).forEach(([jourIdx, col]) => {
       const deb = parseHeureExcel(String(row[col] || '').trim());
@@ -1391,7 +1438,7 @@ function parseMatriceTasks(rows) {
     for (let i = startLine + 1; i < endLine; i++) {
       const row = rows[i];
       const prenom = String(row[5] || '').trim();
-      if (!prenom || !/^[A-ZÀ-Ü][a-zà-ü]/.test(prenom)) continue;
+      if (!isValidPrenom(prenom)) continue;
       if (!result[prenom]) result[prenom] = {};
       const codes = [];
       for (let c = 8; c < Math.min(row.length, 263); c++) {
