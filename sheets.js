@@ -214,15 +214,27 @@ async function fetchAndApplySheet() {
             break;
           }
         }
-        if (num)   SEMAINE.numero  = num;
-        if (debut) SEMAINE.debut   = debut;
-        if (fin)   SEMAINE.fin     = fin;
-        if (mag)   SEMAINE.magasin = mag;
-        if (debut) Object.assign(JOURS_DATES, calcJoursDates(debut));
-
-        // Enregistrer automatiquement cette semaine avec ses dates
-        saveWeekURL(num, SHEET_CSV_URL, debut, fin);
-        setActiveWeekNum(num);
+        // Si l'utilisateur a déjà choisi une semaine, on respecte SON choix
+        // et on n'écrase ni le numéro, ni l'active week, ni saveWeekURL
+        const userActiveWeek = getActiveWeekNum();
+        if (userActiveWeek && Number(userActiveWeek) !== num) {
+          console.log(`[NOZ Sheets] ⚠️ CSV contient S${num} mais l'utilisateur a choisi S${userActiveWeek} — choix utilisateur respecté`);
+          // On garde le numéro choisi par l'utilisateur, mais on met quand même les dates et magasin
+          if (debut) SEMAINE.debut = debut;
+          if (fin)   SEMAINE.fin   = fin;
+          if (mag)   SEMAINE.magasin = mag;
+          if (debut) Object.assign(JOURS_DATES, calcJoursDates(debut));
+          SEMAINE.numero = Number(userActiveWeek);
+        } else {
+          if (num)   SEMAINE.numero  = num;
+          if (debut) SEMAINE.debut   = debut;
+          if (fin)   SEMAINE.fin     = fin;
+          if (mag)   SEMAINE.magasin = mag;
+          if (debut) Object.assign(JOURS_DATES, calcJoursDates(debut));
+          // Première fois : on enregistre cette semaine
+          saveWeekURL(num, SHEET_CSV_URL, debut, fin);
+          setActiveWeekNum(num);
+        }
         break;
       }
     }
