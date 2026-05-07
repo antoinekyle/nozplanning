@@ -1728,17 +1728,21 @@ async function init() {
     localStorage.removeItem('noz_active_week');
   }
 
-  // Auto-sélectionner la semaine en cours selon la date
-  if (typeof detectCurrentWeek === 'function') {
-    const current = detectCurrentWeek();
-    if (current && typeof setActiveWeekNum === 'function') {
-      setActiveWeekNum(current);
-    } else {
-      // Aucune semaine avec dates — prendre la plus récente disponible
-      const nums = Object.keys(_allWeeks).sort((a, b) => Number(a) - Number(b));
-      if (nums.length > 0 && typeof setActiveWeekNum === 'function') setActiveWeekNum(nums[nums.length - 1]);
+  // Choisir la semaine active : respecter le choix manuel de l'utilisateur s'il existe
+  const _currentActive = typeof getActiveWeekNum === 'function' ? getActiveWeekNum() : null;
+  if (!_currentActive || !_allWeeks[_currentActive]) {
+    // Pas de choix valide → auto-détection par date
+    if (typeof detectCurrentWeek === 'function') {
+      const current = detectCurrentWeek();
+      if (current && typeof setActiveWeekNum === 'function') {
+        setActiveWeekNum(current);
+      } else {
+        const nums = Object.keys(_allWeeks).sort((a, b) => Number(a) - Number(b));
+        if (nums.length > 0 && typeof setActiveWeekNum === 'function') setActiveWeekNum(nums[nums.length - 1]);
+      }
     }
   }
+  // Sinon : on garde la semaine choisie manuellement par l'utilisateur
 
   // Charger les données Excel importées (priorité sur data.js)
   loadStaffOverride();
